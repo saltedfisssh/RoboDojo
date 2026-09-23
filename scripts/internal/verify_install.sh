@@ -8,7 +8,7 @@ policy_dir=""
 env_cfg="arx_x5"
 task_name="stack_bowls"
 ckpt_name=""
-sim_env="RoboDojo"
+sim_env="${ROBODOJO_SIM_ENV:-RoboDojo}"
 policy_env=""
 skip_isaac="false"
 skip_conda="false"
@@ -24,8 +24,8 @@ Options:
   --env-cfg NAME        env_cfg stem to validate (default: arx_x5)
   --task NAME           Task name to validate (default: stack_bowls)
   --ckpt NAME           Optional checkpoint directory under policy checkpoints
-  --sim-env NAME        Simulator conda env for Isaac imports (default: RoboDojo)
-  --policy-env NAME     Optional policy conda env to check
+  --sim-env NAME        Simulator Conda name, uv, or venv path (uv entry defaults to .venv)
+  --policy-env NAME     Optional policy Conda name, uv, or venv/project path
   --summary PATH        Write JSON summary to PATH
   --skip-isaac          Skip isaacsim/isaaclab import check
   --skip-conda          Skip conda env existence checks
@@ -70,6 +70,16 @@ while [[ $# -gt 0 ]]; do
       ;;
   esac
 done
+
+# Use the requested venv for all Python checks, including YAML and summaries.
+source "${ROOT_DIR}/scripts/internal/uv_env.sh"
+sim_venv=""
+if [[ "${sim_env}" == uv || "${sim_env}" == */* || "${sim_env}" == .venv ]]; then
+  sim_venv="$(robodojo_resolve_venv "${sim_env}")" || exit 1
+  robodojo_use_uv "${sim_venv}"
+fi
+cd "${ROOT_DIR}"
+export PYTHONPATH="${ROOT_DIR}:${ROOT_DIR}/XPolicyLab${PYTHONPATH:+:${PYTHONPATH}}"
 
 RESULTS_FILE="$(mktemp)"
 trap 'rm -f "${RESULTS_FILE}"' EXIT
@@ -198,41 +208,65 @@ else
   record "FAIL" "python import" "cannot import env.global_configs"
 fi
 
-if [[ "${skip_conda}" == "true" ]]; then
-  record "WARN" "conda envs" "skipped by --skip-conda"
-elif command -v conda >/dev/null 2>&1; then
-  envs="$(conda env list | awk 'NF && $1 !~ /^#/ {print $1}')"
-  if grep -qx "${sim_env}" <<< "${envs}"; then
-    record "PASS" "sim conda env" "${sim_env}"
+check_conda_env() {
+  local name="$1" label="$2"
+  if [[ "${skip_conda}" == true ]]; then
+    record "WARN" "${label}" "skipped by --skip-conda"
+  elif command -v conda >/dev/null 2>&1; then
+    if conda env list | awk 'NF && $1 !~ /^#/ {print $1}' | grep -Fxq -- "${name}"; then
+      record "PASS" "${label}" "${name}"
+    else
+      record "FAIL" "${label}" "${name} not found"
+    fi
   else
-    record "FAIL" "sim conda env" "${sim_env} not found"
+    record "FAIL" "${label}" "Conda unavailable for ${name}"
   fi
-  if [[ -z "${policy_env}" ]]; then
-    record "WARN" "policy conda env" "skipped; pass --policy-env to validate"
-  elif [[ "${policy_env}" == "uv" || "${policy_env}" == */* ]]; then
-    record "WARN" "policy conda env" "policy env is path/uv; conda check skipped"
-  elif grep -qx "${policy_env}" <<< "${envs}"; then
-    record "PASS" "policy conda env" "${policy_env}"
+}
+
+if [[ -n "${sim_venv}" ]]; then
+  record "PASS" "sim uv env" "${sim_venv}"
+else
+  check_conda_env "${sim_env}" "sim conda env"
+fi
+if [[ -z "${policy_env}" ]]; then
+  record "WARN" "policy env" "skipped; pass --policy-env to validate"
+elif [[ "${policy_env}" == uv || "${policy_env}" == */* || "${policy_env}" == .venv ]]; then
+  if [[ "${policy_env}" == uv && -z "${policy_dir}" ]]; then
+    record "FAIL" "policy uv env" "--policy-env uv requires --policy-dir"
+  elif [[ ! -f "${ROOT_DIR}/XPolicyLab/utils/activate_env.sh" ]]; then
+    record "FAIL" "policy uv env" "XPolicyLab environment helper is missing"
   else
-    record "FAIL" "policy conda env" "${policy_env} not found"
+    source "${ROOT_DIR}/XPolicyLab/utils/activate_env.sh"
+    if policy_venv="$(xpl_resolve_venv "${policy_env}" "${policy_dir:-${ROOT_DIR}}" "${policy_dir}/deploy.yml")"; then
+      record "PASS" "policy uv env" "${policy_venv}"
+    else
+      record "FAIL" "policy uv env" "cannot resolve ${policy_env}"
+    fi
   fi
 else
-  record "FAIL" "conda" "conda command not found"
+  check_conda_env "${policy_env}" "policy conda env"
 fi
 
 if [[ "${skip_isaac}" == "true" ]]; then
   record "WARN" "Isaac imports" "skipped by --skip-isaac"
-elif command -v conda >/dev/null 2>&1; then
-  if conda run -n "${sim_env}" python - <<'PY'; then
+else
+  isaac_command=()
+  if [[ -n "${sim_venv}" ]]; then
+    isaac_command=("${sim_venv}/bin/python")
+  elif command -v conda >/dev/null 2>&1; then
+    isaac_command=(conda run --no-capture-output -n "${sim_env}" python)
+  fi
+  if [[ ${#isaac_command[@]} -eq 0 ]]; then
+    record "FAIL" "Isaac imports" "cannot select Python for ${sim_env}"
+  elif "${isaac_command[@]}" - <<'PY'
 import isaacsim  # noqa: F401
 import isaaclab  # noqa: F401
 PY
+  then
     record "PASS" "Isaac imports" "isaacsim and isaaclab import in ${sim_env}"
   else
     record "FAIL" "Isaac imports" "isaacsim/isaaclab import failed in ${sim_env}"
   fi
-else
-  record "FAIL" "Isaac imports" "conda unavailable; cannot check ${sim_env}"
 fi
 
 if [[ -n "${summary_path}" ]]; then

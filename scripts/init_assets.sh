@@ -33,7 +33,7 @@ assets_ready() {
 }
 
 check_download_tools() {
-  if command -v conda >/dev/null 2>&1; then
+  if [[ "${ROBODOJO_UV:-0}" != 1 && -z "${VIRTUAL_ENV:-}" ]] && command -v conda >/dev/null 2>&1; then
     eval "$(conda shell.bash hook)" 2>/dev/null || true
     if conda env list | grep -q "^RoboDojo "; then
       info "Activating conda environment 'RoboDojo'..."
