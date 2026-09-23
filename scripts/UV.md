@@ -11,6 +11,17 @@ bash scripts/init_assets-uv.sh
 bash scripts/robodojo-uv.sh doctor --skip-policy
 ```
 
+资源默认从 Hugging Face 下载，也可使用 [ModelScope 镜像](https://modelscope.cn/datasets/RoboDojo-Benchmark/RoboDojo/files)：
+
+```bash
+bash scripts/init_assets-uv.sh modelscope
+```
+
+两种来源均只下载 `Assets/**`，只依赖 Git/Git LFS，无需激活 Python/Conda 环境。
+下载缓存按来源分开保存；已有完整 `Assets` 时会跳过下载。
+可通过 `MODELSCOPE_REPO_ID`、`MODELSCOPE_REPO_URL`、`MODELSCOPE_REVISION` 覆盖
+ModelScope 仓库配置，默认分支为 `master`；`--help` 可查看完整用法。
+
 系统依赖已安装时可加 `--skip-system`；中断后可用 `--from isaacsim` 等参数续装。
 安装脚本现在也安装资源下载需要的 Git LFS。安装器保留现有 Isaac Sim 版本约束，
 并显式处理 IsaacLab 与 Starlette 的版本声明冲突；`uv pip check` 可能报告该已知冲突。

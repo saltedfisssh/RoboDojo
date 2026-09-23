@@ -20,7 +20,7 @@ directly, without `uv sync` changing the simulator's pinned dependencies.
 | [install-uv.sh](install-uv.sh) | Install the simulator environment; supports `--from STEP` and `--skip-system` |
 | [robodojo-uv.sh](robodojo-uv.sh) | All CLI commands, including doctor, eval, server, client, smoke, benchmark and summaries |
 | [eval_policy-uv.sh](eval_policy-uv.sh) | Direct simulator client, with the same arguments as `eval_policy.sh` |
-| [init_assets-uv.sh](init_assets-uv.sh) | Download assets using Git LFS, without Conda activation |
+| [init_assets-uv.sh](init_assets-uv.sh) | Download assets from Hugging Face (default) or ModelScope using Git LFS, without Conda activation |
 | [download_data-uv.sh](RoboDojo/download_data-uv.sh) | Download demonstration datasets |
 | [download_ckpt-uv.sh](RoboDojo/download_ckpt-uv.sh) | Download policy checkpoints |
 | [verify_install-uv.sh](internal/verify_install-uv.sh) | Direct environment/config/asset checks |
@@ -29,6 +29,8 @@ directly, without `uv sync` changing the simulator's pinned dependencies.
 ```bash
 bash scripts/install-uv.sh --skip-system
 bash scripts/init_assets-uv.sh
+# Alternatively, download assets from ModelScope:
+# bash scripts/init_assets-uv.sh modelscope
 bash scripts/robodojo-uv.sh doctor --skip-policy
 bash scripts/robodojo-uv.sh dimensions
 
