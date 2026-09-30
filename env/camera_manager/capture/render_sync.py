@@ -27,8 +27,6 @@ does not advance physics.
 
 from __future__ import annotations
 
-from typing import Optional
-
 _DISPATCHER_PATH = "/Render/PostProcess/SDGPipeline/PostProcessDispatcher"
 
 # Kit settings that make each app update wait for its own rendered frame.
@@ -89,7 +87,7 @@ def _truthy(value) -> bool:
     return bool(value)
 
 
-def dispatcher_time() -> Optional[float]:
+def dispatcher_time() -> float | None:
     """Reference time of the last frame the SDG pipeline dispatched."""
     try:
         import omni.graph.core as og

@@ -12,7 +12,7 @@ import numpy as np
 from omegaconf import DictConfig
 import omni.kit.commands
 import omni.usd
-from pxr import Sdf, Usd, UsdGeom, UsdPhysics, UsdShade
+from pxr import Sdf, UsdGeom, UsdPhysics, UsdShade
 import torch
 
 

@@ -23,11 +23,11 @@ Usage:
 from __future__ import annotations
 
 import argparse
+from collections import Counter, defaultdict
 import json
 import os
 import re
 import sys
-from collections import Counter, defaultdict
 
 SCRIPT_DIR = os.path.dirname(os.path.abspath(__file__))
 DEFAULT_ROOT = os.path.normpath(

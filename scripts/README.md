@@ -159,3 +159,7 @@ Container install and smoke tests live under [../docker/](../docker/), not here.
 ## Policy-specific scripts
 
 Training, data prep, and per-policy `eval.sh` live in [../XPolicyLab/policy/](../XPolicyLab/policy/) (submodule).
+
+The [VLAct evaluation tools](vlact/README.md) provide offline checkpoint comparisons,
+explicit checkpoint serving, and paired simulator runs with optional state oracles
+for `push_T`, `plug_in_charger`, `insert_tubes`, and `pour_balls_into_vase`.

@@ -86,6 +86,7 @@ def create_eval_env(config, app, resume_state=None, **kwargs):
                 str(self.eval_seed) + "_" + self.additional_info,
                 run_id,
             )
+            self.subtask_oracle = None
 
             if resume_state is not None:
                 resumed_save_dir = resume_state.get("save_dir")
@@ -267,6 +268,11 @@ def create_eval_env(config, app, resume_state=None, **kwargs):
             return self.get_obs_batch(env_idx_list=[0])[0]
 
         def get_obs_batch(self, env_idx_list=None, last_frame=False):
+            oracle_name = os.environ.get("ROBODOJO_SUBTASK_ORACLE")
+            if oracle_name and self.subtask_oracle is None:
+                from src.eval_client.subtask_oracle import make_subtask_oracle
+
+                self.subtask_oracle = make_subtask_oracle(oracle_name, self)
             if self.physx_monitor_enabled:
                 self._check_physx_broken_envs()
             if env_idx_list is None:
@@ -281,6 +287,8 @@ def create_eval_env(config, app, resume_state=None, **kwargs):
                     self._stream_vision(env_idx, data[env_idx])
                 env_data = deepcopy(data[env_idx])
                 env_data["env_idx"] = env_idx
+                if self.subtask_oracle is not None and not last_frame:
+                    self.subtask_oracle.annotate(env_idx, env_data)
                 data_list.append(env_data)
             return data_list
 

@@ -18,7 +18,6 @@ CONFIG_DIR = ROOT_DIR / "task" / BENCHMARK / "config"
 sys.path.insert(0, str(ROOT_DIR))
 from task.RoboDojo import task_registry  # noqa: E402
 
-
 # Canonical capability groups from https://robodojo-benchmark.com/doc/sim-tasks/.
 # Generalization tasks also have runnable ``*_random`` configurations; those
 # inherit the dimension of their base task in _task_records().
