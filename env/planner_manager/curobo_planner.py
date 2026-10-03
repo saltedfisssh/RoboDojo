@@ -69,7 +69,7 @@ class CuroboPlanner:
 
         self.device_cfg = DeviceCfg()
 
-        self.use_cuda_graph = True
+        self.use_cuda_graph = bool(_curobo_runtime.cuda_graphs)
 
         self.use_graph_planner = False
         self._batch_max_size = int(BATCH_NUM)
@@ -507,6 +507,9 @@ class CuroboPlanner:
         cfg = MotionPlannerCfg.create(
             robot=self.robot_cfg,
             scene_model=self.scene_model,
+            # dev100 world updates write into fixed storage captured by CUDA
+            # graphs. Reserve slots before warmup for static scene obstacles.
+            collision_cache={"cuboid": 32},
             device_cfg=self.device_cfg,
             num_ik_seeds=32,
             num_trajopt_seeds=4,
@@ -526,6 +529,7 @@ class CuroboPlanner:
         return InverseKinematicsCfg.create(
             robot=self.robot_cfg,
             scene_model=self.scene_model,
+            collision_cache={"cuboid": 32},
             device_cfg=self.device_cfg,
             num_seeds=32,
             seed_solver_num_seeds=32,

@@ -1,0 +1,215 @@
+[
+  {
+    "dataset_task_index": 0,
+    "task": "arrange_largest_number",
+    "instruction": "Arrange the numbers from left to right to form the largest possible number, and place them on the pad.",
+    "official_task_class_present": true
+  },
+  {
+    "dataset_task_index": 1,
+    "task": "build_tower",
+    "instruction": "Build a tower using the wooden blocks and wooden boards.",
+    "official_task_class_present": true
+  },
+  {
+    "dataset_task_index": 2,
+    "task": "classify_objects",
+    "instruction": "Sort the objects by category into the three baskets.",
+    "official_task_class_present": true
+  },
+  {
+    "dataset_task_index": 3,
+    "task": "cover_blocks",
+    "instruction": "Cover the blocks from left to right, remember their colors, then uncover them in the order: red, green, and blue.",
+    "official_task_class_present": true
+  },
+  {
+    "dataset_task_index": 4,
+    "task": "deposit_coin",
+    "instruction": "Pick up the coin from the holder and insert it precisely into the coin bank.",
+    "official_task_class_present": true
+  },
+  {
+    "dataset_task_index": 5,
+    "task": "display_letters",
+    "instruction": "Arrange the letters to spell \"RoboDojo\" in a row.",
+    "official_task_class_present": false,
+    "definition_note": "本地及已检查的上游代码缺少官方任务类；当前为依据数据集指令重建的定义。"
+  },
+  {
+    "dataset_task_index": 6,
+    "task": "fasten_screws",
+    "instruction": "Insert and tighten each screw into the nut of the same color.",
+    "official_task_class_present": true
+  },
+  {
+    "dataset_task_index": 7,
+    "task": "fill_egg_holder",
+    "instruction": "Place the four eggs from the basket into the egg holder, then close the lid.",
+    "official_task_class_present": true
+  },
+  {
+    "dataset_task_index": 8,
+    "task": "fill_pen_holder",
+    "instruction": "Hold the pen holder with one hand, place all pens into it with the other hand, then put it back down.",
+    "official_task_class_present": true
+  },
+  {
+    "dataset_task_index": 9,
+    "task": "fold_clothes",
+    "instruction": "Fold the clothes neatly.",
+    "official_task_class_present": true
+  },
+  {
+    "dataset_task_index": 10,
+    "task": "put_bottles_into_dustbin",
+    "instruction": "Pick up the bottles and throw them into the dustbin, using handover when needed.",
+    "official_task_class_present": true
+  },
+  {
+    "dataset_task_index": 11,
+    "task": "hang_mugs",
+    "instruction": "Hang all the mugs on the mug rack.",
+    "official_task_class_present": true
+  },
+  {
+    "dataset_task_index": 12,
+    "task": "imitate_sorting_sequence",
+    "instruction": "Observe the object placement order, remember it, then place the corresponding objects into the basket in the same order.",
+    "official_task_class_present": true
+  },
+  {
+    "dataset_task_index": 13,
+    "task": "insert_key",
+    "instruction": "Pick up the key, hand it over to the other hand, insert it into the keyhole, then turn it.",
+    "official_task_class_present": true
+  },
+  {
+    "dataset_task_index": 14,
+    "task": "insert_tubes",
+    "instruction": "Insert the three tubes into the rack one by one.",
+    "official_task_class_present": true
+  },
+  {
+    "dataset_task_index": 15,
+    "task": "make_kong",
+    "instruction": "Wait for the opponent to discard a tile, then declare a kong with the matching tiles.",
+    "official_task_class_present": true
+  },
+  {
+    "dataset_task_index": 16,
+    "task": "make_toast",
+    "instruction": "Pick up two slices of bread, place them into the toaster, and press the lever down.",
+    "official_task_class_present": true
+  },
+  {
+    "dataset_task_index": 17,
+    "task": "match_and_pick_from_conveyor",
+    "instruction": "Remember the first object on the conveyor, then pick the matching object when it appears again.",
+    "official_task_class_present": true
+  },
+  {
+    "dataset_task_index": 18,
+    "task": "organize_table",
+    "instruction": "Place the mouse on the mouse pad, push the keyboard into the frame, put the figurine on the stand, place the alarm clock on the drawer, then open the drawer and put all remaining miscellaneous items inside.",
+    "official_task_class_present": true,
+    "dataset_instruction_mismatch": true,
+    "definition_note": "本地官方类只整理闹钟、手办、鼠标、键盘；抽查原数据集 episode 1800 也仅演示这四件物品。数据集指令多出的开抽屉和杂物收纳未在该样本中出现。导出使用本地实际指令。"
+  },
+  {
+    "dataset_task_index": 19,
+    "task": "pack_objects_into_box",
+    "instruction": "Place all the objects into the box with their front sides facing left.",
+    "official_task_class_present": true
+  },
+  {
+    "dataset_task_index": 20,
+    "task": "play_Xylophone",
+    "instruction": "Pick up the mallet and strike all xylophone keys from left to right.",
+    "official_task_class_present": true
+  },
+  {
+    "dataset_task_index": 21,
+    "task": "play_stacking_toy",
+    "instruction": "Place all stacking toy pieces onto the correct pegs.",
+    "official_task_class_present": true
+  },
+  {
+    "dataset_task_index": 22,
+    "task": "play_tic_tac_toe",
+    "instruction": "Play tic-tac-toe as the first player and fill the board with the opponent.",
+    "official_task_class_present": true
+  },
+  {
+    "dataset_task_index": 23,
+    "task": "plug_in_charger",
+    "instruction": "Plug the charger into the power strip.",
+    "official_task_class_present": true
+  },
+  {
+    "dataset_task_index": 24,
+    "task": "pour_balls_into_vase",
+    "instruction": "Pour all the balls from the cup into the vase.",
+    "official_task_class_present": true
+  },
+  {
+    "dataset_task_index": 25,
+    "task": "pour_liquid_into_cup",
+    "instruction": "Pour the liquid from the bottle into the cup.",
+    "official_task_class_present": true
+  },
+  {
+    "dataset_task_index": 26,
+    "task": "press_by_number",
+    "instruction": "Press the two red buttons the required number of times according to the number cards, then press the blue button to confirm.",
+    "official_task_class_present": true
+  },
+  {
+    "dataset_task_index": 27,
+    "task": "push_T",
+    "instruction": "Push the T-shaped block to align it precisely with the gray T-shaped pad.",
+    "official_task_class_present": true
+  },
+  {
+    "dataset_task_index": 28,
+    "task": "sort_nesting_dolls_by_size",
+    "instruction": "Arrange the five nesting dolls in a row from left to right, from smallest to largest.",
+    "official_task_class_present": true
+  },
+  {
+    "dataset_task_index": 29,
+    "task": "stack_blocks",
+    "instruction": "Stack the three blocks with different textures.",
+    "official_task_class_present": true
+  },
+  {
+    "dataset_task_index": 30,
+    "task": "stack_bowls",
+    "instruction": "Stack the three bowls together.",
+    "official_task_class_present": true
+  },
+  {
+    "dataset_task_index": 31,
+    "task": "store_laptop_and_headphones",
+    "instruction": "Hang the headphones on the headphone stand, close the laptop, then place it into the vertical laptop stand.",
+    "official_task_class_present": true
+  },
+  {
+    "dataset_task_index": 32,
+    "task": "swap_T",
+    "instruction": "Pick up the two T-shaped blocks, swap their positions, and place them back with the correct orientations.",
+    "official_task_class_present": true
+  },
+  {
+    "dataset_task_index": 33,
+    "task": "swap_blocks",
+    "instruction": "Swap the two blocks using the empty mat, pressing the button after each move.",
+    "official_task_class_present": true
+  },
+  {
+    "dataset_task_index": 34,
+    "task": "sweep_blocks",
+    "instruction": "Pick up the broom, hand it over to the right hand, then use the dustpan to sweep the blocks.",
+    "official_task_class_present": true
+  }
+]

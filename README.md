@@ -51,6 +51,12 @@ The [RoboDojo documentation](https://robodojo-benchmark.com/doc/) is the canonic
 | [Configurations](https://robodojo-benchmark.com/doc/usage/configurations/) | Simulator, scene, robot, and camera configuration options. |
 | [Common Issues](https://robodojo-benchmark.com/doc/common-issue/) | Troubleshooting for installation, assets, GPU memory, and evaluation. |
 
+## Local Data Generation Extension
+
+See [示范生成、LeRobot 原子标注与指定帧恢复](docs/datagen/README.md) for the local data generation extension and [实测覆盖与限制](docs/datagen/VALIDATION.md) for validation results. Entry point: `bash scripts/datagen-uv.sh {collect|batch|export|replay|inventory}`.
+
+Current planner limits and per-task layout ranges: [capability matrix](docs/datagen/CAPABILITIES.md). See the [layout expansion guide](docs/datagen/LAYOUT_GUIDE.md) and [paused collection status](docs/datagen/PAUSED_STATE.md) before starting new batches.
+
 ## 🗂️ Repository Structure
 
 ```text
