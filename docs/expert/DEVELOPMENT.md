@@ -49,12 +49,105 @@ src/expert/task_plugins/classify_objects/
 可以把下面的任务说明直接交给其他开发者的 Codex：
 
 > 实现 `<task>` 的官方分布 planner。先阅读
-> `docs/expert/DEVELOPMENT.md` 与任务目录的 `HANDOFF.md`，再阅读官方任务类和 YAML。
+> `docs/expert/DEVELOPMENT.md` 与任务目录的 `HANDOFF.md`。写 planner 前先打开该任务的
+> 官方详情页，阅读任务说明、演示视频与 Scoring 得分点，再结合可用的 Argus 标注。
+> 将详情页链接、评分条件、实际查看的 episode、时间点、动作顺序及疑点写入任务目录的
+> `REFERENCES.md`；随后对照官方任务类和 YAML 确认指令、奖励、失败条件与布局语义。
+> 资料缺失时明确记录缺失项和未验证的假设，继续代码审查与开发，不得声称已观看。
 > 按 `dev inspect → dev run development → 分析失败 → 修改 → 回归` 迭代。
 > 所有动作经 motion/skills 执行，保持官方奖励、失败条件、步数预算和资产分布。
 > 使用 GPU `<gpu>` 和独立输出目录。开发完成后冻结代码，运行固定 validation、RGB
 > 和 qualify，交付 VALIDATION.md、测试、所有失败记录和验收产物路径。
 > 遇到缺失布局语义应实现 task-local sampler 并验证；不能修改 YAML 来降低难度。
+
+## 写 planner 前先阅读示例与标注
+
+**首要资料是当前任务的官方详情页。** 例如，`stack_bowls` 应先阅读
+[官方 Stack Bowls 详情页](https://robodojo-benchmark.com/doc/sim-tasks/stack-bowls/)，
+而不是只打开官网首页或只找一个视频。该页同时提供 Instruction、Description、
+Standard version / Random version 演示视频与 Scoring。2026-10-09 核对的评分说明为：
+
+| 得分 | 页面说明的条件 |
+| --- | --- |
+| 0 | 没有任意两只碗正确堆叠。 |
+| 15 | 任意两只碗正立堆叠，并张开夹爪。 |
+| 100 | 三只碗全部堆叠、保持正立，底碗严格且稳定地放在桌上，机器人回到原位。 |
+
+Codex 应把页面的得分点逐项对应到当前 `task/RoboDojo/tasks/stack_bowls.py` 的
+`get_score()`、`run_reward()`，以及官方失败/结束条件和 YAML。**分数与完整成功判定应
+分别检查**：例如当前叠碗代码的 `get_score()` 检查夹爪张开，`run_reward()` 检查双臂回零，
+二者不能互相替代；具体容差和步数预算也需从当前代码核实。将“页面得分点 → 代码判据 →
+planner 阶段/完成检查”的对应关系写入 `REFERENCES.md`。
+
+其他任务从[官方仿真任务目录](https://robodojo-benchmark.com/doc/sim-tasks/)进入各自详情页，
+核对页面标题、指令与任务 ID，并记录实际 URL。不要只把下划线改成连字符就假设链接有效；
+例如 `stack_bowls_random` 的演示位于上述叠碗页的 Random version，需区分标准版与随机版。
+
+先理解真实演示中的动作语义，再设计 planner。资料可用时至少查看一条本任务的完整成功
+演示；有多条时优先比较 2–3 个不同初态、物体或指令的 episode。官方示例视频与已有 Argus
+标注都可作为入口，两者都有时相互对照；标注不能代替对关键画面的核实。
+
+**官方演示数据的共享盘路径：**
+
+```text
+/mnt/xiaoyu_ssd_intern/RoboDojo/data/RoboDojo_lerobot_v30_video
+```
+
+这是共享数据盘，不是某个开发者的私有 clone。在已挂载该目录的机器上优先直接读取，
+无需复制到每个人的仓库；Python 环境仍由各人在自己的 clone 中配置。
+已确认该目录包含 `meta/info.json`、`meta/tasks.parquet`、`meta/episodes/`、`data/` 和 `videos/`。
+参考查阅保持共享数据不变；抽帧、剪辑和阅读笔记写到自己的 `.cache/`、`data/` 或任务目录。
+
+没有挂载共享盘时，使用以下官方公开地址，选择实际可访问的一处：
+
+- [ModelScope：RoboDojo_lerobot_v30_video（master）](https://modelscope.cn/datasets/RoboDojo-Benchmark/RoboDojo/tree/master/data/RoboDojo_lerobot_v30_video)
+- [Hugging Face：RoboDojo_lerobot_v30_video（main）](https://huggingface.co/datasets/RoboDojo-Benchmark/RoboDojo/tree/main/data/RoboDojo_lerobot_v30_video)
+
+先从元数据定位当前任务与 episode，再读取对应视频分片；无需为查看少数演示默认下载整个
+数据集。确实需要完整下载时可使用 `scripts/RoboDojo/download_data-uv.sh` 的 `lerobot_v3.0`
+格式。公开分支可能更新，在 `REFERENCES.md` 记录所用来源和实际 revision/可用的文件哈希，
+不要假设共享盘与两个公开分支始终是完全相同的快照。
+
+负责人可在任务 `HANDOFF.md` 中继续补充 Argus run 和 episode 目录等位置。
+各自 clone 后在 `REFERENCES.md` 记录实际使用的共享路径或本地下载位置；不要修改全局代码
+来适配个人目录。Codex 查看后创建/补全该文件，记录实际证据，而不是只列待看链接。
+
+| 资料 | 定位方式与注意事项 |
+| --- | --- |
+| 官方任务详情页（优先） | 从官方任务目录进入对应详情页，如 [Stack Bowls](https://robodojo-benchmark.com/doc/sim-tasks/stack-bowls/)；阅读 Instruction / Description、对应版本的视频、Scoring 的每个得分点，再与任务代码核对。 |
+| 官方演示数据 | 优先读取上述共享盘；未挂载时使用上述 ModelScope / Hugging Face 官方目录。结合 `meta/tasks.parquet` 与 episode 元数据定位本任务及视频时间段，不能按 MP4 文件名猜任务。 |
+| 已有 Argus 标注 | 优先使用提供的 `out/episode_*.json`；可通过 `EXPERT_ARGUS_LABELS` 指定该目录，未设置时检查 `.cache/argus-labels`。先核对 `given_prompt`、`task_label` 和来源 episode，`task_label` 可能是自然语言列表，并非官方任务 ID。 |
+| Argus 对应画面 | 从标注中的 `episode_dir` 查找 `context.json`、`instruction.txt` 与 `sources.json`。搬到其他机器后，旧绝对路径可能失效；按实际数据根目录映射并确认文件存在，将映射记入阅读记录。 |
+
+`EXPERT_ARGUS_LABELS` 在当前导出器中只用于读取指令改写候选；设置它不会自动让 planner
+理解视频或时间线。这里要求的是 Codex 主动打开和分析资料。
+
+Argus 的 `sources.json` 若使用打包视频，每个视角可能有各自的 `packed`、`base_s` 和
+`n_frames`。对应视频时刻为 **该视角的 base_s + episode 内时间**，帧数换算使用
+`context.json` 的实际 fps；不能把一个视角的偏移套到全部相机，也不能默认 MP4 起点就是
+episode 起点。标注时间单位应先核对，再与原画面对齐。
+
+无法直接播放时，可用 FFmpeg/PyAV 抽取首尾帧、均匀时间点，以及标注中的抓取、接触、
+释放、状态变化前后帧，并实际通过图像查看工具阅读；接触和失败恢复处需要更密集的帧。
+抽帧阅读要记录抽样区间与局限，不能写成“已完整观看视频”。只有 JSON 时记录“仅阅读标注”。
+如果视频或标注缺失/打不开，记录路径与原因、继续官方代码审查和框架开发，并在后续可用时
+补看关键语义；不要凭标注文本假装确认了抓取成功或真实接触。
+
+阅读 Argus 时优先看 `given_prompt`、`labels.scene`、`timeline`、`key_events`、
+`state_changes`、`completion`、`recovery`，以及存在时的 `data_issues`、`operator_mistakes`。
+辨别推动/抓放、支撑/交接、开合/插入等动作，确认手臂分工、操作顺序、完成状态及双臂是否
+需要回零。成功视频中的重抓、空动作、绕路也可能是操作者修正，不应机械复制成固定步骤。
+
+`REFERENCES.md` 至少包含：官方详情页 URL、查看日期与版本；得分点到代码/完成检查的映射；
+其他资料链接/路径及可用的版本或文件哈希；episode 与任务/指令的
+对应关系；实际查看的视角、时间点和方式（视频/抽帧/仅标注）；观察到的子任务顺序、接触方式、
+成功终态；据此拟采用的 planner 阶段及待验证假设。区分直接观察和从标注推断的内容。
+若示例、标注与当前任务代码不一致，保留差异和版本信息，按当前官方指令及任务约束实现，
+通过开发实验验证；不要修改奖励来迁就演示，也不要仅利用终态奖励绕过任务要求的动作语义。
+
+演示用于理解语义，不是验证集采样来源：不要读取 `Assets/Eval_Layout` 来缩小开发分布，
+也不要把参考演示的完成标注计入自编 planner 的成功率。交付 `VALIDATION.md` 时链接这份
+阅读记录，并列出尚未核实的示例/标注疑点。
 
 ## 扩展契约
 

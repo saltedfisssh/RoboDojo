@@ -2,6 +2,24 @@
 
 Read `docs/expert/DEVELOPMENT.md` and the task's `HANDOFF.md` before editing.
 
+- Before implementing a planner, open its official task detail page and read the
+  instruction/description, demonstration videos and every Scoring condition.
+  Example: https://robodojo-benchmark.com/doc/sim-tasks/stack-bowls/ includes both
+  standard/random videos and scoring points. Find each task's actual page via the
+  official task index; do not assume a URL from its ID. Map the page's scoring
+  points to current code, checking score and full success/termination separately.
+  Record the verified page URL, version/view date and mapping in `REFERENCES.md`.
+- Inspect available official task demonstrations
+  and Argus labels, checking key actions against the corresponding video/frames.
+  Record sources, episodes, timestamps, observed semantics and unresolved questions
+  in task-local `REFERENCES.md`. Distinguish video, sampled-frame and label-only
+  review. If references are missing, record that and continue code review/development;
+  never claim to have watched unavailable media. See DEVELOPMENT.md for locating
+  packed videos, per-camera time offsets and portable reference paths.
+- Prefer the mounted shared official dataset documented in DEVELOPMENT.md and
+  HANDOFF.md. Keep it unchanged; write extracted frames/clips into your own workspace.
+  Use the documented ModelScope/Hugging Face directories when it is not mounted,
+  and record the actual dataset source/revision used for review.
 - Keep task-specific code, sampler adapters and evidence in its own directory.
   Discovery is automatic through `planner.json`; no central registry edits are needed.
 - Use a separate checkout/worktree for each contributor. Shared-core fixes should
