@@ -32,7 +32,7 @@ def attempted_seeds(out):
     }
 
 
-def prepare_output(out, *, task, planner, images, table_randomization):
+def prepare_output(out, *, task, planner, images, table_randomization, sampler=None):
     """Reject accidental mixing of tasks/planners in a resumed collection.
 
     Batch calls this before starting children. Existing v1 directories without
@@ -44,6 +44,8 @@ def prepare_output(out, *, task, planner, images, table_randomization):
     out.mkdir(parents=True, exist_ok=True)
     manifest = out / "collection.json"
     expected = dict(task=task, planner=planner, images=images, table_randomization=table_randomization)
+    if sampler is not None:
+        expected["sampler"] = sampler
     if manifest.exists():
         if json.loads(manifest.read_text()) != expected:
             raise ValueError(f"Collection settings differ from {manifest}; use a separate output directory")

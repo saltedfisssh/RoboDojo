@@ -53,7 +53,9 @@ The [RoboDojo documentation](https://robodojo-benchmark.com/doc/) is the canonic
 
 ## Local Data Generation Extension
 
-**Data generation:** [统一入口、架构与 planner 开发](docs/expert/README.md) — official-distribution layouts, per-task planners, Argus labels and frame restore. Entry point: `bash scripts/generate_data.sh {tasks|collect|batch|export|restore|probe}`. `scripts/expert.sh` remains a compatibility alias.
+**Data generation:** [统一入口、架构与 planner 开发](docs/expert/README.md) — official-distribution layouts, per-task planners, Argus labels and frame restore. Entry point: `bash scripts/generate_data.sh {tasks|dev|collect|batch|export|restore|probe}`. See [多人分工与 Codex planner 迭代](docs/expert/DEVELOPMENT.md) for isolated task plugins, failure diagnostics and physical qualification. `scripts/expert.sh` remains a compatibility alias.
+
+Each contributor can configure their own clone with `bash scripts/install-uv.sh --with-export`, then `bash scripts/init_assets-uv.sh`. Collection uses the local `.venv`; export automatically uses `.venv-lerobot` (LeRobot 0.6.1 / v3.0 datasets). No external LeRobot checkout or policy environment is required. See [环境安装与路径配置](scripts/UV.md#数据生成与独立导出环境).
 
 The earlier fixed-layout experiments remain available through `bash scripts/generate_data.sh legacy ...` or `scripts/datagen-uv.sh`. See [旧实验文档](docs/datagen/README.md) and [实测覆盖与限制](docs/datagen/VALIDATION.md); their task coverage is separate from the official-distribution planners.
 

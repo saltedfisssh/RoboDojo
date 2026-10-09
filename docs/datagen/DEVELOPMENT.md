@@ -58,8 +58,7 @@ OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 \
 
 # LeRobot：包含真实LeRobot writer/reader与视频导出往返
 OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 \
-  PYTHONPATH="$PWD/.cache/datagen-export-deps:$PWD" \
-  ../lerobot/.venv/bin/python -m pytest tests/datagen -q -ra
+  bash scripts/run-lerobot.sh -m pytest tests/datagen -q -ra
 
 .venv/bin/python -m ruff check src/datagen tests/datagen env/planner_manager/curobo_planner.py
 .venv/bin/python -m ruff format --check src/datagen tests/datagen
@@ -67,7 +66,7 @@ bash -n scripts/datagen-uv.sh
 git diff --check
 ```
 
-导出环境overlay的准备方法见README。普通Python进程默认找不到Sim自带USD时，USD相关测试会跳过；用当前安装的Isaac Sim 5.1 USD库独立补验：
+导出环境通过 `bash scripts/install-lerobot-uv.sh` 创建，详见README。普通Python进程默认找不到Sim自带USD时，USD相关测试会跳过；用当前安装的Isaac Sim 5.1 USD库独立补验：
 
 ```bash
 OPENBLAS_NUM_THREADS=1 OMP_NUM_THREADS=1 MKL_NUM_THREADS=1 .venv/bin/python - <<'PY'

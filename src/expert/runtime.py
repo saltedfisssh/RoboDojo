@@ -38,6 +38,7 @@ class EpisodeResult:
     reason: str | None = None
     steps: int = 0
     primitive_steps: dict[str, int] = field(default_factory=dict)
+    diagnostics: dict = field(default_factory=dict)
 
     @property
     def success(self):
@@ -96,4 +97,12 @@ def run_episode(env, factory: PlannerFactory, *, task: str, seed: int, layout: d
         durations[segment.primitive] = durations.get(segment.primitive, 0) + end - segment.start_step
     if recorder is not None:
         recorder.annotate(motion)
-    return EpisodeResult("success" if success else "fail", reason, int(env.take_action_cnt[0]), durations)
+    diagnostics = {}
+    if getattr(env, "expert_diagnostics", False):
+        from src.expert.diagnostics import episode_diagnostics
+
+        try:
+            diagnostics = episode_diagnostics(motion)
+        except Exception as exc:
+            diagnostics = {"diagnostic_error": str(exc)}
+    return EpisodeResult("success" if success else "fail", reason, int(env.take_action_cnt[0]), durations, diagnostics)

@@ -7,7 +7,8 @@ ROOT_DIR="${ROBODOJO_ROOT:-$(cd "$SCRIPT_DIR/.." && pwd)}"
 VENV_DIR="${ROBODOJO_VENV:-.venv}"
 FROM_STEP=system
 SKIP_SYSTEM=0
-STEPS=(system venv base_deps submodules isaacsim isaaclab curobo verify)
+WITH_EXPORT=0
+STEPS=(system venv base_deps submodules isaacsim isaaclab curobo datagen_deps verify)
 
 info() { printf '[install_uv] %s\n' "$*"; }
 error() { printf '[install_uv] ERROR: %s\n' "$*" >&2; exit 1; }
@@ -23,9 +24,10 @@ Options:
   -i, --install      Full install (also the default with no arguments)
   --venv PATH        Environment directory (relative to the repository root)
   --from STEP        Resume: system, venv, base_deps, submodules, isaacsim,
-                     isaaclab, curobo, verify; an existing env is required
+                     isaaclab, curobo, datagen_deps, verify; an existing env is required
                      when resuming after venv
   --skip-system      Skip apt system packages (already installed / no sudo)
+  --with-export      Also create .venv-lerobot for LeRobot v3 export (Python 3.12)
   -h, --help         Show this help
 
 Environment:
@@ -48,6 +50,7 @@ while [[ $# -gt 0 ]]; do
     --venv) need_value "$@"; VENV_DIR="$2"; shift 2 ;;
     --from) need_value "$@"; FROM_STEP="$2"; shift 2 ;;
     --skip-system) SKIP_SYSTEM=1; shift ;;
+    --with-export) WITH_EXPORT=1; shift ;;
     -h|--help) usage; exit 0 ;;
     *) error "Unknown argument: $1 (see --help)" ;;
   esac
@@ -195,6 +198,9 @@ setup_curobo() {
     || error "CuRobo is missing. Run from the submodules step first."
   uv_install --no-build-isolation -e "$ROOT_DIR/third_party/curobo[cu12]"
 }
+setup_datagen_deps() {
+  uv_install -r "$ROOT_DIR/scripts/requirements-datagen.txt"
+}
 setup_verify() {
   # Check metadata and the APIs RoboDojo uses without launching SimulationApp.
   "$PYTHON" - <<'PY'
@@ -202,6 +208,8 @@ from importlib.metadata import version
 
 import numpy
 import torch
+import h5py
+import imageio.v3
 from curobo.batch_motion_planner import BatchMotionPlanner, MotionPlannerCfg
 from curobo.inverse_kinematics import InverseKinematics, InverseKinematicsCfg
 from curobo.motion_planner import MotionPlanner
@@ -238,5 +246,8 @@ for i in "${!STEPS[@]}"; do
     "setup_${STEPS[$i]}"
   fi
 done
+if [[ "$WITH_EXPORT" == 1 ]]; then
+  ROBODOJO_ROOT="$ROOT_DIR" ROBODOJO_VENV="$VENV_DIR" bash "$ROOT_DIR/scripts/install-lerobot-uv.sh"
+fi
 info "Environment setup completed. Activate it with:"
 printf '  source %q\n' "$VENV_DIR/bin/activate"

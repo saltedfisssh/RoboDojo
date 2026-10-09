@@ -8,7 +8,7 @@ import sys
 import pytest
 
 from src.expert.contracts import TaskPlanner
-from src.expert.registry import BUILTINS, load_planner, official_tasks, planner_spec
+from src.expert.registry import BUILTINS, load_planner, official_tasks, planner_spec, registered_planners
 
 ROOT = Path(__file__).resolve().parents[2]
 
@@ -23,12 +23,16 @@ def test_task_inventory_without_site_packages():
     )
     rows = json.loads(result.stdout)
     assert {row["task"] for row in rows} == set(official_tasks())
-    assert sum(row["planner"] is not None for row in rows) == 4
+    assert sum(row["planner"] is not None for row in rows) == len(registered_planners())
     assert next(row for row in rows if row["task"] == "sort_nesting_dolls_by_size")["status"] == "experimental"
-    assert next(row for row in rows if row["task"] == "stack_blocks_random")["status"] == "unimplemented"
+    for row in rows:
+        if row["task"] not in registered_planners():
+            assert row["status"] == "unimplemented"
 
 
-@pytest.mark.parametrize("command", [[], ["--help"], ["collect", "--help"], ["batch", "--help"], ["probe", "--help"]])
+@pytest.mark.parametrize(
+    "command", [[], ["--help"], ["collect", "--help"], ["batch", "--help"], ["probe", "--help"], ["dev", "--help"]]
+)
 def test_help_does_not_need_simulator(command):
     result = subprocess.run(
         [sys.executable, "-S", "-m", "src.expert", *command],
@@ -44,7 +48,6 @@ def test_help_does_not_need_simulator(command):
     "arguments, message",
     [
         (["--task", "not_a_task"], "Unknown official task"),
-        (["--task", "classify_objects"], "No expert planner"),
         (["--task", "stack_blocks", "--num", "0"], "positive integer"),
         (["--task", "stack_blocks", "--table-randomization", "1.1"], "between 0 and 1"),
     ],
@@ -57,6 +60,26 @@ def test_invalid_requests_fail_before_simulator(arguments, message):
         text=True,
     )
     assert result.returncode != 0 and message in result.stderr
+    assert "isaac" not in result.stderr.lower()
+
+
+def test_missing_planner_fails_before_simulator(tmp_path):
+    # Contributors may have implemented any official task in the real checkout.
+    result = subprocess.run(
+        [
+            sys.executable,
+            "-S",
+            "-c",
+            "import sys; from pathlib import Path; from src.expert import registry; "
+            "registry.PLUGIN_ROOT = Path(sys.argv[1]); from src.expert.cli import main; "
+            "raise SystemExit(main(['collect', '--task', 'classify_objects']))",
+            str(tmp_path),
+        ],
+        cwd=ROOT,
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode != 0 and "No expert planner" in result.stderr
     assert "isaac" not in result.stderr.lower()
 
 

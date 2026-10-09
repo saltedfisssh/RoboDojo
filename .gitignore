@@ -3,6 +3,7 @@
 **/*.egg-info
 .ruff_cache/
 .venv/
+.venv-lerobot/
 
 # Downloaded assets (populated by scripts/init_assets.sh)
 Assets/

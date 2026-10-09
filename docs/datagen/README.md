@@ -49,12 +49,15 @@ cuRobo 会将环境坐标中的目标变换到机器人基座坐标。当前安�
 ## 环境与入口
 
 - 采集/恢复：RoboDojo `.venv`，Python 3.11，Isaac Sim 5.1.0.0、Isaac Lab release 2.3.2（其 Python 包版本为 0.54.3）。
-- 导出：相邻 `../lerobot/.venv`，Python 3.12、当前本地 LeRobot 0.6.1，使用 v3.0 数据格式及 language schema。两个环境保持隔离。
-- 本机 LeRobot venv 缺少 h5py，已在本仓库 `.cache/datagen-export-deps` 安装 overlay；没有更改两个现有 venv 的依赖。重建 overlay：
+- 导出：本仓库 `.venv-lerobot`，Python 3.12、固定 LeRobot 0.6.1，使用 v3.0 数据格式及 language schema。
+  安装脚本包含 h5py 与视频依赖，不需要外部 LeRobot checkout 或 PYTHONPATH overlay。
 
 ```bash
-uv pip install --python ../lerobot/.venv/bin/python \
-  --target .cache/datagen-export-deps --no-deps 'h5py>=3.11'
+# 新 clone：配置各自环境，然后下载资源
+bash scripts/install-uv.sh --with-export
+bash scripts/init_assets-uv.sh
+# 已有仿真环境，仅创建导出环境
+bash scripts/install-lerobot-uv.sh
 ```
 
 统一入口：
@@ -66,7 +69,10 @@ bash scripts/datagen-uv.sh export --help
 bash scripts/datagen-uv.sh replay --help
 ```
 
-可用 `ROBODOJO_VENV`、`LEROBOT_PYTHON` 覆盖环境路径。脚本设置当前安装需要的相机扩展和零延迟渲染参数；本机同时存在多份 NVIDIA Vulkan ICD，因此选择 `/etc/vulkan/icd.d/nvidia_icd.json`。已有 `VK_ICD_FILENAMES` 设置会保留。
+可用 `ROBODOJO_VENV`、`LEROBOT_VENV` 覆盖环境路径，或用 `LEROBOT_PYTHON` 显式覆盖导出解释器。
+相对路径以仓库根目录为基准，详见 [环境说明](../../scripts/UV.md#数据生成与独立导出环境)。
+脚本设置当前安装需要的相机扩展和零延迟渲染参数；存在 `/etc/vulkan/icd.d/nvidia_icd.json` 时选用它。
+已有 `VK_ICD_FILENAMES` 设置会保留。
 
 ## 采集
 

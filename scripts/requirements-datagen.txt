@@ -1,0 +1,4 @@
+# Installed under the simulator's NumPy/PyTorch constraints by install-uv.sh.
+h5py>=3.11,<4
+imageio[ffmpeg]>=2.34,<3
+pytest>=8,<9

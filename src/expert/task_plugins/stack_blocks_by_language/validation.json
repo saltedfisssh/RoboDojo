@@ -1,0 +1,44 @@
+{
+  "schema": 1,
+  "task": "stack_blocks_by_language",
+  "seeds": {
+    "development": [
+      0,
+      1,
+      2
+    ],
+    "validation": [
+      100,
+      101,
+      102,
+      103,
+      104,
+      105,
+      106,
+      107,
+      108,
+      109
+    ],
+    "rgb": [
+      200,
+      201,
+      202
+    ]
+  },
+  "minimum_success_rate": 0.8,
+  "minimum_rgb_successes": 1,
+  "official_files": {
+    "env/reward_manager/func_parser.py": "eb928a05c3eb6bae429a922c59e64272c2c3851c22d779143d45627e47b3a504",
+    "env/reward_manager/reward_manager.py": "bc56efd3aaa861b4b38960dc4fb7778a9b4da9cf131f815ac3170300dd233a41",
+    "env_cfg/arx_x5.yml": "7691350159fdeca92fd1b0b2da36913464ccdea3f3251eefb0176aa51db0807f",
+    "env_cfg/camera/camera_config.yml": "c1752170da855e735beba27fddbf78dad16f2395e4ef8b24e9827a768e616a62",
+    "env_cfg/robot/dual_x5.yml": "4eefaccc75c5f83443b7bb85ef1de68ee7a3772e27af2b04a5e8d8769ab9baa1",
+    "env_cfg/robot/dual_x5_and_franka_competition.yml": "ec893f9fde577d0d1209e7dcb85ec2dd74288b636d0c68316cb07bc817b743ab",
+    "env_cfg/scene/conveyor.yml": "c1dfd27faf978f90dfc4825cd83bd203823547c46793f4f9201ce9f4b43beee7",
+    "env_cfg/scene/default.yml": "729df024b9707a55449da94f980c1ca116035e09a1284e2fe071f1b38efd061a",
+    "env_cfg/sim/sim_config.yml": "e442ede1c3d90fcfb50b9461c854d31b22dad9bfbb23397db228b27a6a486963",
+    "task/RoboDojo/config/_task.yml": "655a87cd59fa6272bf352d32deb8ade162737b49a9824e16d428fecf0803380b",
+    "task/RoboDojo/config/stack_blocks_by_language.yml": "4fbfed4f7fc49120831087e709a8dbdfdb4504eb143196000d5790b54eb3bc40",
+    "task/RoboDojo/tasks/stack_blocks_by_language.py": "36a83925f35c7a4caac5add328dd35cb1d346bad833d3064f455d88221e7a41e"
+  }
+}

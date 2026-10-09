@@ -1,6 +1,6 @@
 # RoboDojo 的 uv 使用方式
 
-在仓库根目录运行以下命令。所有 `-uv.sh` 入口默认使用本仓库 `.venv`，
+在仓库根目录运行以下命令。仿真 `-uv.sh` 入口默认使用本仓库 `.venv`，
 不需要先执行 `source .venv/bin/activate`。脚本也能从其他工作目录按绝对路径启动。
 
 ## 安装与资源下载
@@ -42,6 +42,79 @@ bash scripts/RoboDojo/download_ckpt-uv.sh huggingface ACT
 
 `doctor` 会检查资源、配置、任务清单、环境路径及 Isaac 导入；
 `--skip-isaac` 只跳过 Isaac 导入。缺少 Assets 时报告失败属于正常诊断结果。
+
+## 数据生成与独立导出环境
+
+每个人 clone 到自己的路径后创建自己的环境；不依赖开发者目录、相邻 LeRobot checkout
+或手动安装的 `.cache/datagen-export-deps`。下面的命令不安装 XPolicyLab 的策略模型依赖：
+
+```bash
+# 新 clone：安装仿真与导出环境，再下载资源
+bash scripts/install-uv.sh --with-export
+bash scripts/init_assets-uv.sh
+# 若系统依赖已具备，安装时可加 --skip-system
+
+# 已有可运行的仿真环境：只补数据生成依赖并创建导出环境
+bash scripts/install-uv.sh --from datagen_deps --with-export
+
+# 仅处理已有 HDF5 的机器：无需 Isaac、GPU 或 Assets
+bash scripts/install-lerobot-uv.sh
+bash scripts/install-lerobot-uv.sh --verify-only
+```
+
+| 环境 | 版本与职责 | 自动使用它的入口 |
+| --- | --- | --- |
+| `.venv` | Python 3.11、NumPy 1.26.0、Isaac Sim 5.1 / cuRobo、h5py | `collect`、`batch`、`restore`、`dev run` |
+| `.venv-lerobot` | Python 3.12、NumPy 2.2.6、LeRobot 0.6.1、CPU PyTorch、h5py / 视频库 | `export`、`dev qualify` 的导出/读回、旧版 `export/review` |
+
+这是依赖兼容约束，不是 v3 文件格式要求：Isaac Sim kernel 固定 `numpy==1.26.0`，
+IsaacLab 要求 `numpy<2`；LeRobot 0.4.4 的 rerun-sdk 依赖链要求 NumPy 2。
+当前导出代码还使用 0.6.1 的 `RGBEncoderConfig` 和 language schema API，
+[LeRobot 0.6.1](https://github.com/huggingface/lerobot/blob/v0.6.1/pyproject.toml)
+自身要求 Python ≥3.12、NumPy ≥2。删除 XPolicyLab 并不能解决这些冲突。
+不要在仿真环境直接安装 LeRobot，也不要用 `--no-deps` 或 PYTHONPATH overlay 绕过约束。
+这里的 LeRobot **库版本 0.6.1** 输出的是 **数据格式 v3.0**。
+
+导出依赖从 PyPI 安装 `lerobot[dataset]`；不安装训练、硬件和可视化 extras。
+CPU 版 PyTorch 不需要 GPU 驱动，但完整读回验证需要系统 FFmpeg 共享库；Ubuntu 可用
+`sudo apt-get install ffmpeg`。安装器会检查实际 HDF5、语言 schema、H.264 与 TorchCodec 导入，
+并拒绝与仿真 venv 相同或通过软链接指向同一目录的安装目标。
+
+```bash
+# 路径可自选，相对路径始终以仓库根目录为基准。
+export ROBODOJO_VENV=.venv
+export LEROBOT_VENV=.venv-lerobot
+bash scripts/install-lerobot-uv.sh
+bash scripts/generate_data.sh export --input data/expert/raw/task --output data/expert/lerobot/task
+bash scripts/run-lerobot.sh scripts/internal/validate_expert_dataset.py \
+  --dataset data/expert/lerobot/task --report data/expert/validation.json
+```
+
+无需先 activate。`LEROBOT_PYTHON` 优先于 `LEROBOT_VENV`，仅用于显式复用已有兼容解释器；
+安装器始终使用 `--venv` / `LEROBOT_VENV`，不会修改当前激活的环境。自定义安装目录后，
+后续命令也要保留相同的 `LEROBOT_VENV`。`run-lerobot.sh` 重设 PYTHONPATH 为当前仓库，
+避免旧 overlay 或其他 Python 版本的二进制包混入；外部标注 hook 应安装到导出环境中。
+可选 Argus 看板需要显式设置自己的 `ARGUS_ROOT`，不属于采集/导出安装前提。
+
+`requirements-lerobot.txt` 固定全部解析依赖，`.in` 保存直接依赖。维护者升级时在 Linux x86_64
+上重新生成，然后重新执行真实导出与官方读取器验证；不要在日常运行时自动升级：
+
+```bash
+uv pip compile scripts/requirements-lerobot.in --python-version 3.12 --torch-backend cpu \
+  --output-file scripts/requirements-lerobot.txt --no-annotate
+```
+
+2026-10-09 环境适配验证（Linux x86_64）：从零创建本仓库 `.venv-lerobot`，72 个包的
+依赖检查、原生视频库检查与组合入口 `install-uv.sh --from verify --with-export` 均通过。
+仿真环境的 315 个包版本前后完全一致；仿真侧与启动器回归 192 passed / 5 skipped，
+独立 NumPy 2 环境的数据回归 80 passed / 5 skipped。
+从仓库外启动，重新导出已有 `stack_blocks_by_language` 的 3 条 RGB 轨迹，共 897 帧；
+官方 LeRobot reader 抽查 9 帧，三路视频共 2691 帧全部解码，全部动作/状态与原始 HDF5 一致。
+产物在 `data/expert/development/stack_blocks_by_language/environment-portability/lerobot`，
+安装与检查记录在 `.cache/environment-portability/`。另有不下载依赖的临时 clone 测试覆盖
+空格路径、相对路径、解释器优先级、缺失环境、退出码和禁止覆写仿真环境。
+此次没有重新从零安装完整 Isaac 栈，也没有重跑 GPU 采集/恢复；原任务资格记录仍对应其
+原始源码快照。环境入口已纳入源码指纹，后续完整资格验收应重新采集同一冻结版本的证据。
 
 ## 策略环境与评测
 

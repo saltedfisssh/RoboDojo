@@ -1,0 +1,12 @@
+# Export only: no policy training, robot hardware, Isaac or CUDA dependencies.
+# Regenerate on Linux x86_64 with Python 3.12 (see scripts/UV.md).
+lerobot[dataset]==0.6.1
+torch==2.11.0+cpu
+torchvision==0.26.0+cpu
+torchcodec==0.11.1
+numpy==2.2.6
+h5py>=3.11,<4
+imageio[ffmpeg]>=2.34,<3
+pytest>=8,<9
+# Shared checkpoint/geometry regression tests also run under NumPy 2.
+transforms3d>=0.4.2,<0.5

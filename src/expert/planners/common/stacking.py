@@ -63,15 +63,14 @@ class StackingPlanner(TaskPlanner):
         """Try bases in carry-distance order, charging 0.25 m per relocation."""
         motion, profile = self.motion, self.profile
         candidates = []
-        for base in self.labels:
+        for base in self.base_candidates():
             position = motion.pose(base)[0]
-            movers = sorted(
-                (label for label in self.labels if label != base),
-                key=lambda label: abs(motion.pose(label)[0][0] - position[0]),
-            )
-            distance = sum(np.linalg.norm(motion.pose(label)[0][:2] - position[:2]) for label in movers)
-            candidates.append((distance, base, None, movers))
-            for xy in self.center_spots:
+            movers = self.movers_for(base)
+            for xy in self.base_locations(base):
+                if xy is None:
+                    distance = sum(np.linalg.norm(motion.pose(label)[0][:2] - position[:2]) for label in movers)
+                    candidates.append((distance, base, None, movers))
+                    continue
                 center = np.asarray(xy)
                 distance = np.linalg.norm(position[:2] - center) + 0.25
                 distance += sum(np.linalg.norm(motion.pose(label)[0][:2] - center) for label in movers)
@@ -99,6 +98,21 @@ class StackingPlanner(TaskPlanner):
             if moves is not None:
                 return StackPlan(base, moves, relocation)
         return None
+
+    def base_candidates(self):
+        """Tasks with an ordered stack can constrain the bottom object."""
+        return self.labels
+
+    def base_locations(self, base):
+        """None keeps the base in place; other entries relocate it by grasping."""
+        return (None, *self.center_spots)
+
+    def movers_for(self, base):
+        """Default unordered stacking minimizes horizontal carry distance."""
+        return sorted(
+            (label for label in self.labels if label != base),
+            key=lambda label: abs(self.motion.pose(label)[0][0] - self.motion.pose(base)[0][0]),
+        )
 
     def gather(self):
         """Bring outliers into free central spots before retrying stack search."""

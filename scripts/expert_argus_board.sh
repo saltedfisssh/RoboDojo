@@ -6,7 +6,7 @@ set -euo pipefail
 DATASET="$(cd "$1" && pwd)"
 NAME="$(basename "$DATASET")"
 BOARD="${2:-robodojo_expert}"
-ARGUS="${ARGUS_ROOT:-/kpfs_ssd/data/wzy/argus}"
+ARGUS="${ARGUS_ROOT:?Set ARGUS_ROOT to your own Argus checkout; board publishing is optional.}"
 PY="$ARGUS/.venv/bin/python"
 EPISODES="$ARGUS/data/episodes/robodojo_expert/$NAME"
 RUN="$ARGUS/data/runs/robodojo_expert/$NAME-planner"

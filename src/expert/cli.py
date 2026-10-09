@@ -12,6 +12,7 @@ COMMANDS = {
     "export": "export expert HDF5 to LeRobot v3 and Argus labels",
     "restore": "restore a frame and replay or evaluate a policy",
     "probe": "inspect sampled layouts in Isaac",
+    "dev": "scaffold, inspect, run and qualify independently developed planners",
     "tasks": "list official tasks and planner implementation status",
     "legacy": "run the old fixed-layout experimental tools",
 }

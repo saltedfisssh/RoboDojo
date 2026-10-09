@@ -1,0 +1,8 @@
+{
+  "schema": 1,
+  "task": "stack_blocks_by_language",
+  "entrypoint": "src.expert.task_plugins.stack_blocks_by_language.planner:Planner",
+  "sampler": null,
+  "status": "experimental",
+  "note": "Ordered stack pilot; see VALIDATION.md for measured coverage."
+}

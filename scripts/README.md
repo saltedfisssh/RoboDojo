@@ -8,7 +8,7 @@
 | [install.sh](install.sh) | One-time environment setup (conda, Isaac Sim, submodules) |
 | [init_assets.sh](init_assets.sh) | Download robot/object assets |
 | [eval_policy.sh](eval_policy.sh) | Isaac Sim eval client (called by `robodojo.sh client` and XPolicyLab) |
-| [generate_data.sh](generate_data.sh) | Data generation: `tasks`, `collect`, `batch`, `export`, `restore`, `probe`; [planner contract and architecture](../docs/expert/README.md) |
+| [generate_data.sh](generate_data.sh) | Data generation: `tasks`, `dev`, `collect`, `batch`, `export`, `restore`, `probe`; [planner contract](../docs/expert/README.md), [contributor workflow](../docs/expert/DEVELOPMENT.md) |
 
 `expert.sh` is a compatibility alias for `generate_data.sh`. Earlier fixed-layout experiments remain under
 `generate_data.sh legacy ...` / `datagen-uv.sh`; their data formats and task coverage differ from expert collection.
@@ -22,6 +22,8 @@ directly, without `uv sync` changing the simulator's pinned dependencies.
 | Script | Purpose |
 | --- | --- |
 | [install-uv.sh](install-uv.sh) | Install the simulator environment; supports `--from STEP` and `--skip-system` |
+| [install-lerobot-uv.sh](install-lerobot-uv.sh) | Create a local Python 3.12 export environment with locked LeRobot 0.6.1 / CPU dependencies; also available via `install-uv.sh --with-export` |
+| [run-lerobot.sh](run-lerobot.sh) | Run a Python script or module in `.venv-lerobot`; used automatically by export and qualification |
 | [robodojo-uv.sh](robodojo-uv.sh) | All CLI commands, including doctor, eval, server, client, smoke, benchmark and summaries |
 | [eval_policy-uv.sh](eval_policy-uv.sh) | Direct simulator client, with the same arguments as `eval_policy.sh` |
 | [init_assets-uv.sh](init_assets-uv.sh) | Download assets from Hugging Face (default) or ModelScope using Git LFS, without Conda activation |

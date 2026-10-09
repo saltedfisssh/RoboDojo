@@ -17,9 +17,7 @@ import numpy as np
 ROOT = Path(__file__).resolve().parents[2]
 NAMES = json.loads((Path(__file__).with_name("object_names.json")).read_text())
 # Argus labels of the official dataset; instruction variants are pooled from here.
-ARGUS_RUN = Path(
-    os.environ.get("EXPERT_ARGUS_LABELS", "/kpfs_ssd/data/wzy/argus/data/runs/robodojo/20261002-1558_full_ec2e333/out")
-)
+ARGUS_RUN = Path(os.environ.get("EXPERT_ARGUS_LABELS", str(ROOT / ".cache/argus-labels")))
 ARM = {0: "left", 1: "right", None: "both"}
 FPS = 25.0
 SETTING = "A wooden tabletop between two robot arms, viewed by a fixed elevated camera and two gripper-mounted cameras."

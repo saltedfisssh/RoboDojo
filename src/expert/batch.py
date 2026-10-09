@@ -171,6 +171,7 @@ def run_batch(args, spec):
         args.out,
         task=args.task,
         planner=spec.entrypoint,
+        sampler=spec.sampler,
         images=not args.no_images,
         table_randomization=args.table_randomization,
     )

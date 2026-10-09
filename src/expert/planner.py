@@ -419,6 +419,12 @@ class Planner:
         self.segment = Segment(primitive, text, arm, obj, sid, goal)
         self.segment.start_step = self.now
         self.segments.append(self.segment)
+        self.report_progress()
+
+    def report_progress(self):
+        callback = getattr(self.env, "expert_progress", None)
+        if callback is not None:
+            callback(step=self.now, stage=self.segment.primitive if self.segment else "settling")
 
     def background(self, arm, path, primitive, text):
         """Queue a motion for ``arm`` that runs while the other arm works."""
@@ -451,6 +457,8 @@ class Planner:
             self.recorder.add(self.env, action, self.segment, len(self.segments) - 1)
         self.command = action.copy()
         done = self.env.take_joint_action(action)
+        if self.now % 25 == 0:
+            self.report_progress()
         if done:
             for seg in self.segments:
                 if seg.end_step is None:

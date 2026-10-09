@@ -7,6 +7,11 @@
 正式数据生成统一使用 `bash scripts/generate_data.sh`，Python 入口是 `python -m src.expert`。
 原来的 `scripts/expert.sh` 和 `python -m src.expert.collect` 等命令仍然兼容。
 
+**多人开发新任务：** 见 [任务分工、Codex 迭代与验收](DEVELOPMENT.md)。
+`dev init` 创建独立任务插件和交接说明；`dev inspect/run/report/qualify` 提供布局预检、
+固定 seed 实验、失败轨迹、代码快照，以及实际导出和帧恢复验收。
+完整示例见 [stack_blocks_by_language 实测](../../src/expert/task_plugins/stack_blocks_by_language/VALIDATION.md)。
+
 `src/datagen`（见 [旧实验文档](../datagen/README.md)）保留固定布局实验、诊断程序和旧数据恢复；
 其中多数任务仅验证过固定资产和毫米级扰动，不能直接当作正式分布的 planner。
 正式管线仍复用它的 `state.py` 及相关物理检查点适配器，以保持已有数据可恢复；采集与任务规划流程相互独立。
@@ -39,15 +44,22 @@ bash scripts/generate_data.sh restore --dataset data/expert/lerobot/stack_blocks
     --episode-index 0 --subtask 1 --steps 120
 
 # 5) 可选：把导出数据发布到独立的 Argus 看板
-bash scripts/expert_argus_board.sh data/expert/lerobot/stack_blocks robodojo_expert
+ARGUS_ROOT=/path/to/your/argus bash scripts/expert_argus_board.sh data/expert/lerobot/stack_blocks robodojo_expert
 ```
 
 **运行前提：** 必须关闭 MPS（`nvidia-cuda-mps-control`）。开启 MPS 时 Isaac 无法创建 Vulkan 设备，渲染直接失败。
 原开发容器 CPU 配额为 15 核，建议同时运行不超过 3–4 个 Isaac 进程。
 `10.10.2.26` 的实测环境为 8 × A800 80 GB、100 核 CPU 配额；并发数应按实际服务器配置选择。
 
-`collect` / `batch` 默认使用 `ROBODOJO_VENV`（默认仓库 `.venv`）；`export` 使用 `LEROBOT_PYTHON`
-（默认 `../lerobot/.venv/bin/python`）。直接调用 Python 入口时，需要自行选择对应环境。
+新 clone 先执行 `bash scripts/install-uv.sh --with-export` 和 `bash scripts/init_assets-uv.sh`。
+`collect` / `batch` / `restore` 使用 `ROBODOJO_VENV`（默认仓库 `.venv`）；
+`export` 和验收读回使用 `LEROBOT_VENV`（默认仓库 `.venv-lerobot`，Python 3.12 / LeRobot 0.6.1）。
+启动器自动选择环境，不需要激活或在旁边 clone LeRobot，也不需要安装策略模型。
+`LEROBOT_PYTHON` 仍可显式覆盖导出解释器；相对路径以仓库根目录为基准。
+已有仿真环境可用 `bash scripts/install-uv.sh --from datagen_deps --with-export` 补齐。
+版本冲突与自定义路径见 [环境说明](../../scripts/UV.md#数据生成与独立导出环境)。
+可选 Argus 参考标注通过 `EXPERT_ARGUS_LABELS` 指向自己的目录，默认读取 `.cache/argus-labels`；
+没有参考标注时照常从任务指令和规划器生成标注。
 
 ### 多 GPU 采集
 
@@ -142,8 +154,7 @@ GPU 使用范围仍由 `--gpu-ids` 明确指定。每个 worker 在该 GPU 上�
 导出后可执行实际数据验收（使用 LeRobot 环境，检查三路视频的全部帧，并比对所有动作和状态）：
 
 ```bash
-PYTHONPATH=".cache/datagen-export-deps:." ../lerobot/.venv/bin/python \
-  scripts/internal/validate_expert_dataset.py \
+bash scripts/run-lerobot.sh scripts/internal/validate_expert_dataset.py \
   --dataset data/expert/lerobot/stack_blocks --report data/expert/validation.json
 ```
 
@@ -176,6 +187,7 @@ PYTHONPATH=".cache/datagen-export-deps:." ../lerobot/.venv/bin/python \
 | 导出 | `export.py` | LeRobot v3，特征名与官方数据集完全一致，另加 `subtask_index`、`primitive_index`、`language_persistent`。 |
 | 恢复 | `restore.py` | 重建布局、载入检查点，然后回放 / 保持 / 交给策略执行（调用策略自己的 `deploy.eval_one_episode`）。 |
 | 并行 | `batch.py` / `scheduling.py` | 常驻 GPU worker、共享成功目标、动态 seed 分配、在途名额、进程退出恢复、目录锁与派发日志；保留 static 固定配额对照。 |
+| 任务开发 | `dev.py` / `development.py` / `qualification.py` | 独立插件脚手架、布局预检、固定 seed、源码快照、失败诊断和导出/恢复验收。 |
 
 ## 新增任务 planner
 
@@ -190,13 +202,13 @@ CLI / registry
               → ExpertEnv：官方物理控制和奖励
 ```
 
-1. 在 `src/expert/planners/<task>.py` 中实现 `TaskPlanner`，通过 `self.context` 获取
+1. 运行 `dev init --task <task>`，在 `src/expert/task_plugins/<task>/planner.py` 中实现 `TaskPlanner`，通过 `self.context` 获取
    `task`、`seed`、初始 `layout`、`env`、`motion`、`skills`。模块导入阶段不能启动 Isaac，也不能导入 `omni` / `pxr`。
    构造函数只保存上下文，机器人动作写在 `run()` 中；不要把 episode 状态存在全局变量或类属性里。
-2. 在 `registry.py` 的 `BUILTINS` 中添加一个 `PlannerSpec(官方任务名, "模块路径:类名")`。
-   不需要修改 CLI、采集循环或 batch；注册时不导入具体 planner。
-3. 用 `collect --no-images` 做物理验证，再用小批 RGB 数据验证录制、导出与恢复。
-   新任务先标记 `experimental`，实测通过后再更新状态。仅新增类不等于任务已验证。
+2. 任务目录中的 `planner.json` 自动注册实现；不需要修改中央 registry、CLI、采集循环或 batch。
+   发现阶段不导入具体 planner。现有四个内置 planner 继续保留在 `planners/`。
+3. 按 [多人开发流程](DEVELOPMENT.md) 使用 `dev inspect/run/report/qualify` 进行开发和验收。
+   新任务保留 `experimental`，实测与人工审查通过后再更新状态。仅新增类不等于任务已验证。
 
 最小接口骨架（必须实现 `run` 的实际逻辑后才能采集）：
 

@@ -9,7 +9,7 @@ import time
 import traceback
 
 from src.expert.arguments import add_collection_arguments, nonnegative_int, positive_int
-from src.expert.registry import load_planner, planner_spec
+from src.expert.registry import load_planner, load_sampler, planner_spec
 from src.expert.storage import attempted_seeds, episode_files, log_attempt, prepare_output
 
 
@@ -22,6 +22,12 @@ def parse(argv=None):
     parser.add_argument("--out", type=Path, help="omit to only measure success rate")
     parser.add_argument("--additional", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("--scheduler", help=argparse.SUPPRESS)
+    parser.add_argument(
+        "--seeds", nargs="+", type=nonnegative_int, help="attempt exactly these seeds once (fresh output)"
+    )
+    parser.add_argument("--diagnostics", action="store_true", help="save layout, terminal state and planner stages")
+    parser.add_argument("--save-failures", action="store_true", help="retain failed trajectories under failures/")
+    parser.add_argument("--progress", type=Path, help=argparse.SUPPRESS)
     return parser.parse_args(argv)
 
 
@@ -31,8 +37,16 @@ def collect_attempt(args, spec, factory, env, sampler, seed):
 
     started = time.monotonic()
     row = dict(seed=seed, task=args.task, planner=spec.entrypoint, gpu=args.gpu)
+    from src.expert.diagnostics import progress, write_json
+
+    if args.diagnostics or args.progress is not None:
+        env.expert_diagnostics = args.diagnostics
+        env.expert_progress = lambda **values: progress(args.progress, seed, **values)
+    progress(args.progress, seed, step=0, stage="sampling/reset")
     try:
         layout = sampler.sample(seed)
+        if args.diagnostics and args.out is not None:
+            write_json(args.out / "diagnostics" / f"layout_{seed:07d}.json", layout)
         recorder = None
         if args.out is not None:
             from src.expert.recorder import Recorder
@@ -42,8 +56,16 @@ def collect_attempt(args, spec, factory, env, sampler, seed):
             )
         result = run_episode(env, factory, task=args.task, seed=seed, layout=layout, recorder=recorder)
         row.update(asdict(result))
+        if args.diagnostics and args.out is not None:
+            path = args.out / "diagnostics" / f"episode_{seed:07d}.json"
+            write_json(path, row.pop("diagnostics", {}))
+            row["diagnostics_file"] = str(path)
         if result.success and recorder is not None:
             row["file"] = str(recorder.save(args.out / f"episode_{seed:07d}.h5"))
+        elif args.save_failures and recorder is not None and recorder.rows:
+            directory = args.out / "failures"
+            directory.mkdir(exist_ok=True)
+            row["failure_file"] = str(recorder.save(directory / f"failed_{seed:07d}.h5", outcome=result.result))
     except LayoutError as exc:
         row.update(result="layout_error", reason=str(exc))
     except Exception as exc:
@@ -55,7 +77,6 @@ def collect_attempt(args, spec, factory, env, sampler, seed):
 
 
 def collect(args, spec, factory):
-    from src.expert.layout import LayoutSampler
     from src.expert.runtime import simulation_session
     from src.expert.scheduling import WorkerClient
 
@@ -63,19 +84,26 @@ def collect(args, spec, factory):
         args.out,
         task=args.task,
         planner=spec.entrypoint,
+        sampler=spec.sampler,
         images=not args.no_images,
         table_randomization=args.table_randomization,
     )
     done = attempted_seeds(args.out)
+    if args.seeds is not None:
+        if len(set(args.seeds)) != len(args.seeds) or args.scheduler or args.additional:
+            raise ValueError("--seeds must be unique and cannot be combined with a batch scheduler")
+        if done:
+            raise ValueError("Fixed-seed runs require fresh output; use a new run directory")
+    fixed = iter(args.seeds) if args.seeds is not None else None
     # Static batches assign new-success quotas; dynamic batches use the parent
     # coordinator's target and never stop based on a worker-local success count.
     collected = 0 if args.additional else len(episode_files(args.out))
     stats = dict(success=0, fail=0, unstable=0, layout_error=0, error=0)
-    if not args.scheduler and collected >= args.num:
+    if fixed is None and not args.scheduler and collected >= args.num:
         summary = {**stats, "success_rate": None, "collected": collected, "target_reached": True}
         print("[expert] summary", json.dumps(summary), flush=True)
         return summary
-    sampler = LayoutSampler(args.task, table_randomization=args.table_randomization)
+    sampler = load_sampler(spec)(args.task, table_randomization=args.table_randomization)
     seed = args.seed_start
     with simulation_session(
         args.task,
@@ -89,6 +117,10 @@ def collect(args, spec, factory):
             while True:
                 if jobs is not None:
                     seed = jobs.acquire(previous)
+                    if seed is None:
+                        break
+                elif fixed is not None:
+                    seed = next(fixed, None)
                     if seed is None:
                         break
                 else:

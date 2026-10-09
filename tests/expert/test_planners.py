@@ -16,6 +16,7 @@ from src.expert.planners.sort_nesting_dolls import SortNestingDollsPlanner
 from src.expert.planners.stack_blocks import StackBlocksPlanner
 from src.expert.planners.stack_bowls import StackBowlsPlanner
 from src.expert.planners.swap_t import SwapTPlanner
+from src.expert.task_plugins.stack_blocks_by_language.planner import Planner as OrderedStackPlanner
 
 
 class Scene:
@@ -124,6 +125,28 @@ def test_stacking_fails_without_executing_infeasible_grasp():
     with pytest.raises(PlanningError, match="no base/arm assignment"):
         StackBlocksPlanner(ctx).run()
     assert ctx.skills.placements == []
+
+
+def test_language_stack_preserves_requested_order_despite_cheaper_other_base():
+    # block_1 is central and would be the shortest unordered stacking base.
+    positions = {f"block_{i}": [x, -0.15, TABLE_TOP + 0.02] for i, x in enumerate((-0.12, 0.0, 0.12))}
+    ctx = context("stack_blocks_by_language", positions)
+    OrderedStackPlanner(ctx).run()
+    assert [move[0] for move in ctx.skills.placements] == ["block_1", "block_2"]
+    heights = [ctx.motion.pose(f"block_{i}")[0][2] for i in range(3)]
+    assert heights[0] < heights[1] < heights[2]
+    assert ctx.motion.events[-1] == ("home", [0, 1], {})
+
+
+def test_language_stack_relocates_only_the_base_before_ordered_stacking():
+    positions = {f"block_{i}": [x, -0.15, TABLE_TOP + 0.02] for i, x in enumerate((0.30, -0.35, -0.12))}
+    ctx = context("stack_blocks_by_language", positions)
+    OrderedStackPlanner(ctx).run()
+    assert [move[0] for move in ctx.skills.placements] == ["block_0", "block_1", "block_2"]
+    assert abs(ctx.motion.pose("block_0")[0][0]) <= 0.05
+    heights = [ctx.motion.pose(f"block_{i}")[0][2] for i in range(3)]
+    assert heights[0] < heights[1] < heights[2]
+    assert all(move[3]["precise"] for move in ctx.skills.placements)
 
 
 @pytest.mark.parametrize("single_arm,expected_moves", [(False, 2), (True, 3)])

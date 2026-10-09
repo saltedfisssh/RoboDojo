@@ -85,12 +85,14 @@ class Recorder:
             )
         self.subtasks = _plain(planner.subtasks)
 
-    def save(self, path):
+    def save(self, path, *, outcome="success"):
         path = Path(path)
         tmp = path.with_suffix(".partial.h5")
+        if path.exists() or tmp.exists():
+            raise FileExistsError(f"Refusing to overwrite {path} or {tmp}")
         env = self.env
         n = len(self.rows)
-        with h5py.File(tmp, "w") as f:
+        with h5py.File(tmp, "x") as f:
             f.attrs["schema"] = SCHEMA
             meta = {
                 "task": self.task,
@@ -100,7 +102,8 @@ class Recorder:
                 "fps": 25,
                 "num_frames": n,
                 "step_lim": int(env.step_lim),
-                "success": bool(env.success[0]),
+                "success": outcome == "success" and bool(env.success[0] and env.end_flag[0]),
+                "outcome": outcome,
                 "steps": int(env.take_action_cnt[0]),
                 "action_semantics": "absolute joints; left j1..6, left gripper open[0,1], right j1..6, right gripper",
                 "state_semantics": "measured joints + previously commanded gripper opening (official ObsManager)",
@@ -148,7 +151,7 @@ def _config(env):
 def _plain(value):
     if isinstance(value, dict):
         return {str(k): _plain(v) for k, v in value.items()}
-    if isinstance(value, (list, tuple)):
+    if isinstance(value, list | tuple):
         return [_plain(v) for v in value]
     if isinstance(value, np.ndarray):
         return value.tolist()
