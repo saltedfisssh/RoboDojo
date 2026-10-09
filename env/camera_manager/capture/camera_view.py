@@ -180,6 +180,7 @@ class CameraView(XFormPrim):
         scales: np.ndarray | torch.Tensor | wp.array | None = None,
         visibilities: np.ndarray | torch.Tensor | wp.array | None = None,
         reset_xform_properties: bool = True,
+        device: str = "cuda",
     ):
         XFormPrim.__init__(
             self,
@@ -194,21 +195,37 @@ class CameraView(XFormPrim):
         )
         self._output_annotators = output_annotators
         self._annotators = dict()
+        self._capture_device = device
         self.camera_resolution = camera_resolution
-        self._tiled_render_product = None
+        self._render_product = None
         self._setup_tiled_sensor()
 
     def __del__(self):
-        XFormPrim.__del__(self)
+        self.destroy()
+
+    def destroy(self):
+        """Release GPU render resources immediately, independently of Python GC."""
         self._clean_up_tiled_sensor()
+        # Prim.__del__ dispatches to self.destroy(), so the override must also
+        # remove the base class's simulation callbacks before the view dies.
+        XFormPrim.destroy(self)
 
     def _clean_up_tiled_sensor(self):
         """Clean up the sensor by detaching annotators and destroying render products, and removing related prims."""
-        if self._tiled_render_product is not None:
-            # detach annotators from render product
-            self._tiled_annotator.detach([self._tiled_render_product.path])
-            # delete tiled render products
-            self._tiled_render_product.destroy()
+        product = getattr(self, "_render_product", None)
+        if product is not None:
+            for annotator in self._annotators.values():
+                try:
+                    annotator.detach([product.path])
+                except TypeError as exc:
+                    # Sim 5.1 may retain a deleted upstream node in SyntheticData
+                    # after a scene reset. Still release the render product;
+                    # unrelated detach failures must remain visible.
+                    if "Invalid NodeObj object" not in str(exc):
+                        raise
+            self._annotators.clear()
+            product.destroy()
+            self._render_product = None
 
     def _get_tiled_resolution(self, num_cameras, resolution) -> Tuple[int, int]:
         """Calculate the resolution for the tiled sensor based on the number of cameras and individual camera resolution.
@@ -246,15 +263,15 @@ class CameraView(XFormPrim):
             # get annotator
             if annotator_type == "rgba" or annotator_type == "rgb":
                 self._annotators["rgba"] = rep.AnnotatorRegistry.get_annotator(
-                    "rgb", device="cuda", do_array_copy=False
+                    "rgb", device=self._capture_device, do_array_copy=False
                 )
             elif annotator_type == "depth" or annotator_type == "distance_to_image_plane":
                 self._annotators["distance_to_image_plane"] = rep.AnnotatorRegistry.get_annotator(
-                    "distance_to_image_plane", device="cuda", do_array_copy=False
+                    "distance_to_image_plane", device=self._capture_device, do_array_copy=False
                 )
             else:
                 self._annotators[annotator_type] = rep.AnnotatorRegistry.get_annotator(
-                    annotator_type, device="cuda", do_array_copy=False
+                    annotator_type, device=self._capture_device, do_array_copy=False
                 )
         # attach the annotator to the render product
         for annotator in self._annotators.values():
@@ -298,7 +315,7 @@ class CameraView(XFormPrim):
         if out is not None:
             output_device = str(out.device) if hasattr(out, "device") else "cuda"
         else:
-            output_device = "cuda"
+            output_device = self._capture_device
         # get the linear sensor data from the tiled annotator and (if needed) slice it to get only the RGB data
         data = self._annotators[spec["name"]].get_data(device=output_device)
         # check whether returned data is a dict (used for segmentation)

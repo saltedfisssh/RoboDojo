@@ -8,6 +8,10 @@
 | [install.sh](install.sh) | One-time environment setup (conda, Isaac Sim, submodules) |
 | [init_assets.sh](init_assets.sh) | Download robot/object assets |
 | [eval_policy.sh](eval_policy.sh) | Isaac Sim eval client (called by `robodojo.sh client` and XPolicyLab) |
+| [generate_data.sh](generate_data.sh) | Data generation: `tasks`, `collect`, `batch`, `export`, `restore`, `probe`; [planner contract and architecture](../docs/expert/README.md) |
+
+`expert.sh` is a compatibility alias for `generate_data.sh`. Earlier fixed-layout experiments remain under
+`generate_data.sh legacy ...` / `datagen-uv.sh`; their data formats and task coverage differ from expert collection.
 
 ## uv entry points
 
@@ -151,6 +155,9 @@ Not intended for direct daily use. Called by `robodojo.sh` or policy utilities.
 | [smoke_all_tasks.sh](internal/smoke_all_tasks.sh) | `robodojo.sh smoke` / `benchmark` |
 | [summarize_result.py](internal/summarize_result.py) | `robodojo.sh summarize` |
 | [stat_score_distribution.py](internal/stat_score_distribution.py) | Offline score histogram analysis (manual) |
+| [benchmark_expert_scaling.py](internal/benchmark_expert_scaling.py) | Fixed-seed RGB benchmark; GPU/worker scaling with static or dynamic dispatch |
+| [validate_expert_scaling.py](internal/validate_expert_scaling.py) | Validate completed benchmark raw data and summarize resource usage |
+| [validate_expert_dataset.py](internal/validate_expert_dataset.py) | Read exported expert data with LeRobot and decode every video frame |
 
 ## Docker
 

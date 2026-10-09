@@ -53,9 +53,9 @@ The [RoboDojo documentation](https://robodojo-benchmark.com/doc/) is the canonic
 
 ## Local Data Generation Extension
 
-**Batch expert data generation (recommended):** [专家数据批量生成](docs/expert/README.md) — layouts from the official task distribution, Argus-schema labels, frame restore. Entry point: `bash scripts/expert.sh {collect|batch|export|restore}`.
+**Data generation:** [统一入口、架构与 planner 开发](docs/expert/README.md) — official-distribution layouts, per-task planners, Argus labels and frame restore. Entry point: `bash scripts/generate_data.sh {tasks|collect|batch|export|restore|probe}`. `scripts/expert.sh` remains a compatibility alias.
 
-See [示范生成、LeRobot 原子标注与指定帧恢复](docs/datagen/README.md) for the local data generation extension and [实测覆盖与限制](docs/datagen/VALIDATION.md) for validation results. Entry point: `bash scripts/datagen-uv.sh {collect|batch|export|replay|inventory}`.
+The earlier fixed-layout experiments remain available through `bash scripts/generate_data.sh legacy ...` or `scripts/datagen-uv.sh`. See [旧实验文档](docs/datagen/README.md) and [实测覆盖与限制](docs/datagen/VALIDATION.md); their task coverage is separate from the official-distribution planners.
 
 Current planner limits and per-task layout ranges: [capability matrix](docs/datagen/CAPABILITIES.md). See the [layout expansion guide](docs/datagen/LAYOUT_GUIDE.md) and [paused collection status](docs/datagen/PAUSED_STATE.md) before starting new batches.
 

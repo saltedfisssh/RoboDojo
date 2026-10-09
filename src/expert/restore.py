@@ -24,8 +24,10 @@ import time
 
 import numpy as np
 
+from src.expert.arguments import nonnegative_int
 
-def parse():
+
+def parse(argv=None):
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     src = ap.add_mutually_exclusive_group(required=True)
     src.add_argument("--episode", type=Path, help="raw expert episode .h5")
@@ -42,7 +44,8 @@ def parse():
     ap.add_argument("--report", type=Path)
     ap.add_argument("--video", type=Path, help="write cam_high mp4 of the continuation")
     ap.add_argument("--no-images", action="store_true")
-    return ap.parse_args()
+    ap.add_argument("--gpu", type=nonnegative_int, default=0)
+    return ap.parse_args(argv)
 
 
 def load_episode(args):
@@ -53,10 +56,10 @@ def load_episode(args):
     else:
         rows = [json.loads(lbl) for lbl in (args.dataset / "meta/replay.jsonl").read_text().splitlines()]
         path = args.dataset / next(r for r in rows if r["episode_index"] == args.episode_index)["state_path"]
-    f = h5py.File(path, "r")
-    meta = json.loads(f.attrs["meta"])
-    segments = json.loads(f.attrs["segments"])
-    subtasks = json.loads(f.attrs["subtasks"])
+    with h5py.File(path, "r") as f:
+        meta = json.loads(f.attrs["meta"])
+        segments = json.loads(f.attrs["segments"])
+        subtasks = json.loads(f.attrs["subtasks"])
     n = meta["num_frames"]
     if args.frame is not None:
         frame = args.frame
@@ -69,7 +72,7 @@ def load_episode(args):
         frame = min(starts)
     if not 0 <= frame < n:
         raise SystemExit(f"frame {frame} outside [0, {n})")
-    return path, f, meta, segments, subtasks, frame
+    return path, meta, segments, subtasks, frame
 
 
 def checkpoint(f, frame):
@@ -82,6 +85,41 @@ def checkpoint(f, frame):
     )
     context = json.loads(g["context"][frame])
     return arrays, context
+
+
+def replay_recording(task_env, env, f, adapter, *, frame, budget, video=False):
+    """Replay actions and compare state only with a checkpoint at the same time.
+
+    Checkpoints precede actions. There is no checkpoint after the final action,
+    so a complete replay measures drift immediately before that action instead.
+    """
+    recorded = f["action"][()]
+    report = {}
+
+    def compare(index):
+        report["replay_drift_frame"] = index
+        report["replay_drift"] = adapter.rollout_errors(checkpoint(f, index)[0])
+
+    for index in range(frame, min(budget, len(recorded))):
+        if video:
+            task_env.get_obs()
+        if index == len(recorded) - 1:
+            compare(index)
+        vec = recorded[index]
+        task_env.take_action(
+            {
+                "left_arm_joint_state": vec[0:6],
+                "left_ee_joint_state": vec[6:7],
+                "right_arm_joint_state": vec[7:13],
+                "right_ee_joint_state": vec[13:14],
+            }
+        )
+        if env.end_flag[0]:
+            break
+    next_frame = env.take_action_cnt[0]
+    if frame < next_frame < len(recorded):
+        compare(next_frame)
+    return report
 
 
 class Shim:
@@ -109,16 +147,21 @@ def atomic_goal(segments, subtask):
     return None
 
 
-def main():
-    args = parse()
-    path, f, meta, segments, subtasks, frame = load_episode(args)
-    from src.expert.sim import launch_app
+def main(argv=None):
+    args = parse(argv)
+    path, meta, segments, subtasks, frame = load_episode(args)
+    import h5py
 
-    app = launch_app(cameras=not args.no_images)
+    from src.expert.runtime import simulation_session
+
+    with simulation_session(meta["task"], images=not args.no_images, device_id=args.gpu) as env:
+        with h5py.File(path, "r") as f:
+            restore_episode(args, env, path, f, meta, segments, subtasks, frame)
+
+
+def restore_episode(args, env, path, f, meta, segments, subtasks, frame):
     from src.datagen.state import RigidStateAdapter
-    from src.expert.sim import make_env
 
-    env = make_env(meta["task"], app, cameras=not args.no_images)
     layout = json.loads(f.attrs["layout"])
     if not env.reset_layout(meta["seed"], layout):
         raise SystemExit("recorded layout failed the stability check on reload")
@@ -210,24 +253,7 @@ def main():
         deploy = __import__(f"XPolicyLab.policy.{args.policy}.deploy", fromlist=["eval_one_episode"])
         deploy.eval_one_episode(TASK_ENV=task_env, model_client=client)
     elif args.steps:
-        recorded = f["action"][()]
-        end = min(budget, len(recorded))
-        for i in range(frame, end):
-            task_env.get_obs() if args.video else None
-            vec = recorded[i]
-            task_env.take_action(
-                {
-                    "left_arm_joint_state": vec[0:6],
-                    "left_ee_joint_state": vec[6:7],
-                    "right_arm_joint_state": vec[7:13],
-                    "right_ee_joint_state": vec[13:14],
-                }
-            )
-            if env.end_flag[0]:
-                break
-        last = min(env.take_action_cnt[0], len(recorded) - 1)
-        if last > frame:
-            report["replay_drift"] = adapter.rollout_errors(checkpoint(f, last)[0])
+        report.update(replay_recording(task_env, env, f, adapter, frame=frame, budget=budget, video=bool(args.video)))
     report.update(
         steps=state["steps"],
         seconds=round(time.time() - t0, 1),
@@ -242,8 +268,6 @@ def main():
         import imageio.v2 as imageio
 
         imageio.mimwrite(args.video, frames, fps=25)
-    env.close()
-    app.close()
 
 
 if __name__ == "__main__":

@@ -16,10 +16,11 @@ CAMERAS = ("cam_high", "cam_left_wrist", "cam_right_wrist")
 
 
 class Recorder:
-    def __init__(self, env, task, seed, layout, *, images=True, checkpoints=True):
+    def __init__(self, env, task, seed, layout, *, images=True, checkpoints=True, planner_entrypoint=None):
         self.env, self.task, self.seed, self.layout = env, task, int(seed), layout
         self.images = images
         self.checkpoints = checkpoints
+        self.planner_entrypoint = planner_entrypoint
         self.rows = []
         self.adapter = None
         self.t0 = time.time()
@@ -94,6 +95,7 @@ class Recorder:
             meta = {
                 "task": self.task,
                 "seed": self.seed,
+                "planner": self.planner_entrypoint,
                 "instruction": str(self.instruction),
                 "fps": 25,
                 "num_frames": n,

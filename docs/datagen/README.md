@@ -1,5 +1,9 @@
 # RoboDojo 数据生成、原子标注与状态恢复
 
+> 本目录记录旧的固定布局实验管线。正式数据采集和新任务 planner 开发请从
+> [统一数据生成入口](../expert/README.md) 开始：`bash scripts/generate_data.sh`。
+> 下文历史命令、旧数据格式与诊断程序继续保留，可通过 `generate_data.sh legacy ...` 调用。
+
 35 类检查集的入口与验证边界见 [REVIEW35.md](REVIEW35.md)，实际成功数和完整视频见 [检查目录](../../data/datagen_review35/REVIEW.md)。[视频检查页](../../data/datagen_review35/review.html) 可在浏览器直接打开：按任务/seed 切换，点击原子任务时间轴或输入帧号定位，并复制当前帧的 Isaac 状态恢复命令；不会在网页中自动启动仿真。
 
 本目录对应本地扩展 `src/datagen`。直接使用当前 RoboDojo 仿真、任务成功条件、双 X5 控制器及 cuRobo，不需要新建仿真 codebase。支持范围、实际成功样例及失败项见 [VALIDATION.md](VALIDATION.md)。已实现面向训练集 35 类的任务程序，以及刚体、外部关节、布料、流体和交互状态适配；**35 类各三条完整成功 RGB 的检查集仍未全部完成**。程序实现、物理成功、RGB 采集和 LeRobot 导出分别统计，当前数量以检查目录为准。

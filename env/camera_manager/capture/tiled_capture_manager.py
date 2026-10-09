@@ -32,6 +32,9 @@ class TiledCaptureManager:
         self.camera_manager = camera_manager
         self.num_envs = num_envs
         self.device = device
+        # Physics can run on CPU while rendering/capture belongs to a worker's GPU.
+        self.capture_device = str(device) if str(device).startswith("cuda") else f"cuda:{torch.cuda.current_device()}"
+        self._camera_signature = None
         self.tiled_render_products: List[str] = []  # all the render products
         self.annotator: List[
             List[List[Annotator]]
@@ -64,7 +67,10 @@ class TiledCaptureManager:
         2. Get all render_product control
         3. Attach Annotator
         """
-        self.camera_prim_paths.clear()
+        self._release_capture()
+        self.cameras = self.camera_manager.cameras
+        self.camera_names = self.camera_manager.camera_names
+        self.num_cams = len(self.cameras[0]) if self.cameras else 0
         for env_id in range(self.num_envs):
             self.camera_prim_paths.append([])
             for camera in self.cameras[env_id]:
@@ -107,6 +113,7 @@ class TiledCaptureManager:
                 prim_paths_by_cam_id,
                 camera_resolution=[width, height],
                 output_annotators=self.annotator_type[cam_id],
+                device=self.capture_device,
             )
             self.tiled_cameras.append(tiled_camera)
             self.tiled_render_products.append(tiled_camera._render_product)
@@ -127,7 +134,10 @@ class TiledCaptureManager:
                 # Pre-allocate warp array on CUDA to reuse memory
                 import warp as wp
 
-                self._output_buffers[cam_id][annotator_name] = wp.zeros(shape, dtype=spec["dtype"], device="cuda:0")
+                self._output_buffers[cam_id][annotator_name] = wp.zeros(
+                    shape, dtype=spec["dtype"], device=self.capture_device
+                )
+        self._camera_signature = self._current_camera_signature()
 
     def step(self, env_ids: List[int] = None, cam_ids: List[int] = None) -> List[List[List[any]]]:
         """
@@ -173,15 +183,28 @@ class TiledCaptureManager:
             data.append(cam_data)
         return data
 
-    def reset(
-        self,
-    ):
-        """
-        Soft Reset do not need to reset the replicator writer and camera.
-        Only Hard Reset need which means if we reset simulation backend we need to initialize camera again
-        Since Render product change, we also need to attch a new writer maybe
-        """
-        self.init_cameras()
+    def _current_camera_signature(self):
+        return tuple(
+            tuple((id(camera), camera.prim_path, tuple(camera._resolution)) for camera in cameras)
+            for cameras in self.camera_manager.cameras
+        )
+
+    def reset(self):
+        """Reuse render products on soft resets; rebuild after camera replacement."""
+        if self._camera_signature != self._current_camera_signature():
+            self.init_cameras()
+
+    def _release_capture(self):
+        for camera in self.tiled_cameras:
+            camera.destroy()
+        self.tiled_cameras.clear()
+        self.tiled_render_products.clear()
+        self.annotator.clear()
+        self.annotator_type.clear()
+        self.annotator_device.clear()
+        self.camera_prim_paths.clear()
+        self._output_buffers.clear()
+        self._camera_signature = None
 
     def destroy(self):
         """
@@ -189,13 +212,8 @@ class TiledCaptureManager:
         This function will be called when we close the environment.
         """
 
-        self.annotator.clear()
-        self.annotator_type.clear()
-        self.annotator_device.clear()
-        self.tiled_cameras.clear()
-        self.cameras.clear()
-        self.camera_names.clear()
+        self._release_capture()
+        # These lists are owned by CameraManager, which destroys its own prims.
+        self.cameras = []
+        self.camera_names = []
         self.sim = None
-        for rp in self.tiled_render_products:
-            rp.destroy()
-        self.camera_prim_paths.clear()

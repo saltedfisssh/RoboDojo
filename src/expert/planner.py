@@ -12,6 +12,8 @@ from dataclasses import dataclass, field
 import numpy as np
 from transforms3d.quaternions import mat2quat, quat2mat
 
+from src.expert.contracts import EpisodeEnd, PlanningError
+
 LEFT, RIGHT = 0, 1
 ARM_NAMES = ("left", "right")
 TABLE_TOP = 0.765
@@ -21,14 +23,6 @@ MAX_STEP_DELTA = 0.06
 FREE_VMAX = 0.10  # rad per control step
 FREE_AMAX = 0.02  # rad per control step^2
 GRIPPER_FRAMES = 12
-
-
-class PlanningError(RuntimeError):
-    """The expert could not find a feasible motion; the episode is discarded."""
-
-
-class EpisodeEnd(Exception):
-    """The official episode-end logic fired (success or step limit)."""
 
 
 def top_down_rotation(yaw):

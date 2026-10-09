@@ -30,6 +30,7 @@ def launch_app(*, headless=True, cameras=True, device_id=0):
     args.headless = headless
     args.enable_cameras = cameras
     args.device = f"cuda:{device_id}"
+    args.multi_gpu = False  # each worker owns one renderer, not all server GPUs
     # The container CPU quota is far below os.cpu_count(); Kit sizes its task
     # pools from the latter and the throttled workers stall PhysX stepping.
     threads = int(os.environ.get("EXPERT_CPU_THREADS", "4"))
@@ -44,6 +45,21 @@ def launch_app(*, headless=True, cameras=True, device_id=0):
 
     add_zero_delay_kit_args(args)
     return AppLauncher(args).app
+
+
+def close_app(app, return_code=0):
+    """Preserve the command result through Kit's native fast shutdown.
+
+    Full extension teardown can crash at Python finalization with Sim 5.1;
+    retain its default fast shutdown, but post the exit code before close.
+    Callers must flush summaries and close data files before calling this.
+    """
+    import omni.kit.app
+
+    omni.kit.app.get_app().post_quit(return_code)
+    # Recorder writes synchronously and the camera graphs are already destroyed.
+    # Waiting for Replicator here can hang on a frame from a deleted graph.
+    app.close(wait_for_replicator=False)
 
 
 def build_config(task):
@@ -71,11 +87,13 @@ def build_config(task):
     return cfg
 
 
-def make_env(task, app, *, cameras=True):
+def make_env(task, app, *, cameras=True, device_id=0):
     import importlib
 
-    import curobo.runtime as curobo_runtime  # noqa: F401  (import before planners)
     import torch
+
+    torch.cuda.set_device(device_id)
+    import curobo.runtime as curobo_runtime  # noqa: F401  (import before planners)
 
     from env.global_configs import BENCHMARK
     from env.observation_manager.obs_manager import ObsManager
@@ -83,7 +101,8 @@ def make_env(task, app, *, cameras=True):
 
     # One scene, single-pose planning: skip warming the 10-problem batch solver.
     curobo_adapter.BATCH_NUM = 1
-    torch.set_num_threads(4)
+    torch.set_num_threads(int(os.environ.get("EXPERT_CPU_THREADS", "4")))
+    print(f"[expert] devices: renderer={device_id}, curobo=cuda:{torch.cuda.current_device()}", flush=True)
     for _ in range(16):
         app.update()
 

@@ -206,13 +206,13 @@ def write_language(root, language):
     info_path.write_text(json.dumps(info, indent=2) + "\n")
 
 
-def main():
+def main(argv=None):
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--input", type=Path, nargs="+", required=True, help="episode .h5 files or directories")
     ap.add_argument("--output", type=Path, required=True)
     ap.add_argument("--repo-id", default="local/robodojo_expert")
     ap.add_argument("--vcodec", default="h264", help="h264 (fast) or libsvtav1 (official dataset uses av1)")
-    args = ap.parse_args()
+    args = ap.parse_args(argv)
     paths = []
     for p in args.input:
         paths.extend(sorted(p.rglob("episode_*.h5")) if p.is_dir() else [p])

@@ -67,7 +67,8 @@ class CuroboPlanner:
                 )
             self._active_to_cspace_idx.append(self.cspace_joint_names.index(joint_name))
 
-        self.device_cfg = DeviceCfg()
+        # DeviceCfg defaults to cuda:0 even when the process selected another GPU.
+        self.device_cfg = DeviceCfg(device=torch.device("cuda", torch.cuda.current_device()))
 
         self.use_cuda_graph = bool(_curobo_runtime.cuda_graphs)
 
