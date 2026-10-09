@@ -1,17 +1,33 @@
 """Smoke probe: boot Isaac, reset sampled layouts, time stepping."""
 
-import argparse
 import time
 
-from src.expert.arguments import nonnegative_int
+from src.expert.arguments import help_parser, nonnegative_int
 
 
 def main(argv=None):
-    parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("--task", default="stack_blocks")
-    parser.add_argument("--seeds", type=int, nargs="+", default=[0, 1])
-    parser.add_argument("--no-cameras", action="store_true")
-    parser.add_argument("--gpu", type=nonnegative_int, default=0)
+    parser = help_parser(
+        "probe",
+        "Start Isaac to inspect sampled layouts, reset stability and stepping performance.",
+        epilog="Examples:\n  %(prog)s --task stack_blocks --seeds 0 1\n"
+        "  %(prog)s --task stack_blocks --seeds 2 --no-cameras --gpu 1\n\n"
+        "Prints reset timing, robot/object states, instructions and reward information.\n"
+        "Does not execute a task planner or save a dataset. For a layout audit without\n"
+        "starting Isaac, use 'dev inspect --help'.",
+    )
+    parser.add_argument("--task", default="stack_blocks", help="official task whose layouts should be sampled")
+    parser.add_argument(
+        "--seeds", type=int, nargs="+", default=[0, 1], metavar="SEED", help="space-separated layout seeds"
+    )
+    parser.add_argument(
+        "--no-cameras", action="store_true", help="skip camera setup and image timing; cameras are enabled by default"
+    )
+    parser.add_argument(
+        "--gpu",
+        type=nonnegative_int,
+        default=0,
+        help="physical GPU index; do not remap CUDA_VISIBLE_DEVICES",
+    )
     args = parser.parse_args(argv)
     from src.expert.registry import official_tasks
 

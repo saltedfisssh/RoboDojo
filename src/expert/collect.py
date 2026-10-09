@@ -8,25 +8,65 @@ from pathlib import Path
 import time
 import traceback
 
-from src.expert.arguments import add_collection_arguments, nonnegative_int, positive_int
+from src.expert.arguments import add_collection_arguments, help_parser, nonnegative_int, positive_int
 from src.expert.registry import load_planner, load_sampler, planner_spec
 from src.expert.storage import attempted_seeds, episode_files, log_attempt, prepare_output
 
 
 def parse(argv=None):
-    parser = argparse.ArgumentParser(description=__doc__)
+    parser = help_parser(
+        "collect",
+        "Collect successful demonstrations in one Isaac process, or measure success without saving.",
+        epilog="Examples:\n"
+        "  %(prog)s --task stack_blocks --num 20 --no-images --seed-start 0\n"
+        "  %(prog)s --task stack_blocks --num 100 --out data/expert/raw/stack_blocks\n"
+        "  %(prog)s --task stack_blocks --num 3 --seeds 0 1 2 --no-images\n"
+        "\nResume: reuse --out with the same task, planner and recording settings.\n"
+        "Existing successes count toward --num; previously attempted seeds are skipped.\n"
+        "Fixed --seeds are each tried once, ignoring --seed-start, --seed-stride and\n"
+        "--max-attempts. All listed seeds run even if --num is reached early.\n"
+        "Exit status: 0 when --num successes are reached, 1 if the target is unmet.\n"
+        "Use 'dev run --help' for fixed splits, source snapshots and failure reports.",
+    )
     add_collection_arguments(parser)
-    parser.add_argument("--seed-stride", type=positive_int, default=1)
-    parser.add_argument("--max-attempts", type=positive_int, help="default: 3 x num")
-    parser.add_argument("--worker", type=nonnegative_int, default=0)
-    parser.add_argument("--out", type=Path, help="omit to only measure success rate")
+    attempts = parser.add_argument_group("Attempts and reproducibility")
+    attempts.add_argument(
+        "--seed-stride", type=positive_int, default=1, help="increment between candidate layout seeds"
+    )
+    attempts.add_argument(
+        "--max-attempts",
+        type=positive_int,
+        help="maximum new attempts in this invocation, including layout failures (default: 3 x --num)",
+    )
+    attempts.add_argument(
+        "--worker", type=nonnegative_int, default=0, help="worker ID used in attempts_w<ID>.jsonl logs"
+    )
+    output = parser.add_argument_group("Output and diagnostics")
+    output.add_argument(
+        "--out",
+        type=Path,
+        metavar="DIR",
+        help="save successful episode_*.h5 and attempt logs here; omit for a trial without saved data",
+    )
     parser.add_argument("--additional", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("--scheduler", help=argparse.SUPPRESS)
-    parser.add_argument(
-        "--seeds", nargs="+", type=nonnegative_int, help="attempt exactly these seeds once (fresh output)"
+    attempts.add_argument(
+        "--seeds",
+        nargs="+",
+        type=nonnegative_int,
+        metavar="SEED",
+        help="space-separated, unique seeds to try once each; requires no prior attempts in --out",
     )
-    parser.add_argument("--diagnostics", action="store_true", help="save layout, terminal state and planner stages")
-    parser.add_argument("--save-failures", action="store_true", help="retain failed trajectories under failures/")
+    output.add_argument(
+        "--diagnostics",
+        action="store_true",
+        help="with --out, save layouts, terminal states and planner stages in diagnostics/",
+    )
+    output.add_argument(
+        "--save-failures",
+        action="store_true",
+        help="with --out, save recorded failed trajectories separately in failures/",
+    )
     parser.add_argument("--progress", type=Path, help=argparse.SUPPRESS)
     return parser.parse_args(argv)
 

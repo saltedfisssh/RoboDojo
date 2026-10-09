@@ -1,13 +1,12 @@
 """Task handoff and evidence-producing iteration commands; no Isaac on import."""
 
-import argparse
 from collections import Counter
 import json
 import os
 from pathlib import Path
 import sys
 
-from src.expert.arguments import nonnegative_int, positive_int
+from src.expert.arguments import HelpFormatter, help_parser, nonnegative_int, positive_int
 from src.expert.development import (
     archive_sources,
     asset_fingerprint,
@@ -222,30 +221,146 @@ def run(args):
 
 
 def main(argv=None):
-    parser = argparse.ArgumentParser(description=__doc__)
-    sub = parser.add_subparsers(dest="command", required=True)
-    init = sub.add_parser("init", help="create an isolated task plugin and contributor handoff")
-    init.add_argument("--task", required=True)
-    inspect = sub.add_parser("inspect", help="audit default layout support and sample layouts without Isaac")
-    inspect.add_argument("--task", required=True)
-    inspect.add_argument("--seeds", nargs="+", type=nonnegative_int, default=[0, 1, 2])
-    trial = sub.add_parser("run", help="run a fixed seed split with diagnostics and per-episode timeout")
-    trial.add_argument("--task", required=True)
-    trial.add_argument("--split", choices=("development", "validation", "rgb"), default="development")
-    trial.add_argument("--seeds", nargs="+", type=nonnegative_int)
-    trial.add_argument("--out", type=Path, required=True)
-    trial.add_argument("--gpu", type=nonnegative_int, default=0)
+    parser = help_parser(
+        "dev",
+        "Develop a task planner with reproducible seed splits and inspectable evidence.",
+        epilog="Workflow:\n"
+        "  %(prog)s init --task classify_objects\n"
+        "  %(prog)s inspect --task classify_objects\n"
+        "  %(prog)s run --task classify_objects --out data/dev/classify_objects/v1\n"
+        "  %(prog)s report --run data/dev/classify_objects/v1\n"
+        "  %(prog)s qualify --help\n"
+        "\nUse a new output directory after each code change. Keep source unchanged during\n"
+        "a run. Default protocol seeds: development 0-2, validation 100-109, RGB 200-202;\n"
+        "the task's validation.json is authoritative. See docs/expert/DEVELOPMENT.md.",
+    )
+    sub = parser.add_subparsers(dest="command", required=True, title="Development commands", metavar="COMMAND")
+    init = sub.add_parser(
+        "init",
+        help="create a task plugin and contributor handoff",
+        formatter_class=HelpFormatter,
+        description="Create planner.py, planner.json, validation.json and HANDOFF.md under\n"
+        "src/expert/task_plugins/TASK/. Refuses to overwrite an existing plugin.",
+        epilog="Example:\n  %(prog)s --task classify_objects\n\n"
+        "Implement the generated planner, then run 'dev inspect' before starting Isaac.",
+    )
+    init.add_argument("--task", required=True, help="official task name to scaffold; list names with 'tasks'")
+    inspect = sub.add_parser(
+        "inspect",
+        help="audit layout support and sample layouts without Isaac",
+        formatter_class=HelpFormatter,
+        description="Check the registered planner, layout semantics and sampled object identities.\n"
+        "Print a JSON audit without starting Isaac. This is not a physics validation.",
+        epilog="Example:\n  %(prog)s --task classify_objects --seeds 0 1 2\n\n"
+        "Exit status: 0 if ready, 1 if the audit reports errors.",
+    )
+    inspect.add_argument("--task", required=True, help="official task with a registered planner")
+    inspect.add_argument(
+        "--seeds",
+        nargs="+",
+        type=nonnegative_int,
+        default=[0, 1, 2],
+        metavar="SEED",
+        help="space-separated layout seeds to inspect",
+    )
+    trial = sub.add_parser(
+        "run",
+        help="run a fixed seed split with diagnostics and timeouts",
+        formatter_class=HelpFormatter,
+        description="Try every seed in a split exactly once, retaining failures in the success-rate\n"
+        "denominator. Save source snapshots, diagnostics, trajectories and report.json.",
+        epilog="Examples:\n"
+        "  %(prog)s --task classify_objects --split development --out data/dev/classify_objects/v1\n"
+        "  %(prog)s --task classify_objects --seeds 2 --images --out data/dev/classify_objects/debug2\n"
+        "  %(prog)s --task classify_objects --split validation --out data/dev/classify_objects/validation-v1\n"
+        "  %(prog)s --task classify_objects --split rgb --out data/dev/classify_objects/rgb-v1\n"
+        "\nUse a fresh --out for every run and keep the source unchanged until it finishes.\n"
+        "GPU access uses a cooperative lock (EXPERT_DEV_LOCK_DIR, default:\n"
+        "/tmp/robodojo-expert-dev). It does not manage unrelated GPU processes.\n"
+        "Exit status: 0 if the run is complete and meets the task protocol's threshold,\n"
+        "1 otherwise; invalid setup returns 2. See 'dev report --help' to inspect failures.",
+    )
+    trial.add_argument("--task", required=True, help="task plugin with a validation.json protocol")
+    trial.add_argument(
+        "--split",
+        choices=("development", "validation", "rgb"),
+        default="development",
+        help="seed split from validation.json; rgb always enables image recording",
+    )
+    trial.add_argument(
+        "--seeds",
+        nargs="+",
+        type=nonnegative_int,
+        metavar="SEED",
+        help="override seeds for development only; must be unique and exclude validation/RGB seeds",
+    )
+    trial.add_argument(
+        "--out", type=Path, required=True, metavar="DIR", help="new run directory; must not already exist"
+    )
+    trial.add_argument(
+        "--gpu",
+        type=nonnegative_int,
+        default=0,
+        help="physical GPU index; CUDA_VISIBLE_DEVICES must be unset",
+    )
     trial.add_argument("--images", action="store_true", help="also record RGB on development/validation splits")
-    trial.add_argument("--timeout", type=positive_int, default=900, help="startup and each episode timeout in seconds")
-    trial.add_argument("--wait-timeout", type=positive_int, default=600, help="wait for cooperative GPU slot")
-    report = sub.add_parser("report", help="summarize failures, missing seeds and code changes")
-    report.add_argument("--run", type=Path, required=True)
-    qualify = sub.add_parser("qualify", help="validate RGB, export, decode videos and restore an intermediate frame")
-    qualify.add_argument("--validation", type=Path, required=True)
-    qualify.add_argument("--rgb", type=Path, required=True)
-    qualify.add_argument("--out", type=Path, required=True)
-    qualify.add_argument("--gpu", type=nonnegative_int, default=0)
-    qualify.add_argument("--timeout", type=positive_int, default=1200)
+    trial.add_argument(
+        "--timeout",
+        type=positive_int,
+        default=900,
+        metavar="SECONDS",
+        help="timeout for startup and for each episode separately, in seconds",
+    )
+    trial.add_argument(
+        "--wait-timeout",
+        type=positive_int,
+        default=600,
+        metavar="SECONDS",
+        help="maximum wait for the cooperative GPU lock, in seconds",
+    )
+    report = sub.add_parser(
+        "report",
+        help="summarize failures, missing seeds and code changes",
+        formatter_class=HelpFormatter,
+        description="Read a dev run, compare its source fingerprint with the current checkout,\n"
+        "then print and update report.json without starting Isaac.",
+        epilog="Example:\n  %(prog)s --run data/dev/classify_objects/v1\n\n"
+        "A successful report command does not imply a passing run; inspect meets_threshold.",
+    )
+    report.add_argument(
+        "--run", type=Path, required=True, metavar="DIR", help="dev run directory containing run.json and raw/"
+    )
+    qualify = sub.add_parser(
+        "qualify",
+        help="validate RGB, export, decode videos and restore a frame",
+        formatter_class=HelpFormatter,
+        description="Check matching validation and RGB evidence, export LeRobot, decode all videos,\n"
+        "then restore and replay an intermediate frame in Isaac. Requires both environments.",
+        epilog="Example:\n"
+        "  %(prog)s --validation data/dev/classify_objects/validation-v1 \\\n"
+        "    --rgb data/dev/classify_objects/rgb-v1 --out data/dev/classify_objects/qualification-v1\n"
+        "\nBoth runs must use the same task, source and protocol, with their required seed\n"
+        "splits complete. Keep that source unchanged during qualification.\n"
+        "Outputs: qualification.json, lerobot/, dataset_validation.json, restore.json,\n"
+        "restore.mp4 and stage logs. Export uses LEROBOT_VENV / LEROBOT_PYTHON.\n"
+        "Exit status: 0 if all checks pass, 1 on qualification failure. Human review is\n"
+        "still required before marking a planner available; see docs/expert/DEVELOPMENT.md.",
+    )
+    qualify.add_argument(
+        "--validation", type=Path, required=True, metavar="DIR", help="completed dev run with --split validation"
+    )
+    qualify.add_argument("--rgb", type=Path, required=True, metavar="DIR", help="completed dev run with --split rgb")
+    qualify.add_argument(
+        "--out", type=Path, required=True, metavar="DIR", help="new qualification directory; must not already exist"
+    )
+    qualify.add_argument("--gpu", type=nonnegative_int, default=0, help="physical GPU index for the restore stage")
+    qualify.add_argument(
+        "--timeout",
+        type=positive_int,
+        default=1200,
+        metavar="SECONDS",
+        help="timeout per export/validation/restore stage and for acquiring the GPU lock, in seconds",
+    )
     args = parser.parse_args(argv)
     try:
         if args.command == "init":

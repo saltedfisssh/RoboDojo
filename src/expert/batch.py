@@ -1,6 +1,5 @@
 """Collect to a shared success target with persistent, GPU-bound workers."""
 
-import argparse
 from contextlib import ExitStack
 import json
 import os
@@ -9,7 +8,7 @@ import subprocess
 import sys
 import time
 
-from src.expert.arguments import add_collection_arguments, nonnegative_int, positive_int
+from src.expert.arguments import add_collection_arguments, help_parser, nonnegative_int, positive_int
 from src.expert.registry import load_planner, planner_spec
 from src.expert.scheduling import WorkQueue, batch_lock, serve_queue
 from src.expert.storage import episode_files, prepare_output, read_attempts
@@ -136,21 +135,56 @@ def run_workers(args, commands, queue=None):
 
 
 def main(argv=None):
-    parser = argparse.ArgumentParser(description=__doc__)
-    add_collection_arguments(parser)
-    parser.add_argument("--workers", type=positive_int, help="total GPU slots; default: one per --gpu-ids, otherwise 3")
-    parser.add_argument(
-        "--gpu-ids", nargs="+", type=nonnegative_int, help="round-robin GPU assignment; defaults to --gpu"
+    parser = help_parser(
+        "batch",
+        "Collect to a shared success target using multiple persistent Isaac worker processes.",
+        epilog="Examples:\n"
+        "  %(prog)s --task stack_blocks --num 100 --out data/expert/raw/stack_blocks\n"
+        "  %(prog)s --task stack_blocks --num 100 --gpu-ids 0 1 --workers 4 --out data/expert/raw/multi_gpu\n"
+        "\n--workers is the total process count, not the count per GPU. GPU IDs are\n"
+        "space-separated; workers are assigned round-robin. Without --gpu-ids, all\n"
+        "workers use --gpu. Fewer workers may start when fewer successes remain.\n"
+        "\nResume by rerunning with the same --out and recording settings. --num is the\n"
+        "final total, not the number to add. Dynamic scheduling shares the remaining\n"
+        "target; static scheduling gives each worker a fixed quota.\n"
+        "Output: episode_*.h5, attempts_w*.jsonl, logs/worker*.log; dynamic runs also\n"
+        "write scheduling_*.jsonl. Exit status: 0 if the target is reached without worker\n"
+        "errors, otherwise 1. See docs/expert/README.md for multi-GPU setup.",
     )
-    parser.add_argument("--out", type=Path, required=True)
-    parser.add_argument("--attempts-per-episode", type=positive_int, default=4)
+    add_collection_arguments(parser)
+    workers = parser.add_argument_group("Workers and scheduling")
+    workers.add_argument(
+        "--workers", type=positive_int, help="total worker processes (default: one per --gpu-ids entry, otherwise 3)"
+    )
+    workers.add_argument(
+        "--gpu-ids",
+        nargs="+",
+        type=nonnegative_int,
+        metavar="ID",
+        help="physical GPU IDs, e.g. 0 1 2 3; assigned round-robin (default: all workers on --gpu)",
+    )
     parser.add_argument(
+        "--out", type=Path, required=True, metavar="DIR", help="raw dataset directory to create or resume"
+    )
+    workers.add_argument(
+        "--attempts-per-episode",
+        type=positive_int,
+        default=4,
+        help="attempt budget multiplier: remaining successes x this value; layout failures also consume attempts",
+    )
+    workers.add_argument(
         "--scheduling",
         choices=("dynamic", "static"),
         default="dynamic",
-        help="dynamic shared target (default), or legacy fixed worker quotas",
+        help="dynamic: idle workers request another seed; static: fixed quotas and interleaved seeds",
     )
-    parser.add_argument("--startup-delay", type=float, default=20, help="seconds between Isaac starts")
+    workers.add_argument(
+        "--startup-delay",
+        type=float,
+        default=20,
+        metavar="SECONDS",
+        help="delay between Isaac worker starts, from 0 to 60 seconds",
+    )
     args = parser.parse_args(argv)
     if args.workers is None:
         args.workers = len(args.gpu_ids) if args.gpu_ids else 3

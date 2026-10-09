@@ -3,6 +3,24 @@
 import argparse
 
 
+class HelpFormatter(argparse.ArgumentDefaultsHelpFormatter, argparse.RawDescriptionHelpFormatter):
+    """Keep examples readable and show only useful, concrete defaults."""
+
+    def _get_help_string(self, action):
+        if action.required or action.default is None or isinstance(action.default, bool):
+            return action.help
+        return super()._get_help_string(action)
+
+
+def help_parser(command, description, *, epilog=None):
+    return argparse.ArgumentParser(
+        prog=f"bash scripts/generate_data.sh{(' ' + command) if command else ''}",
+        description=description,
+        formatter_class=HelpFormatter,
+        epilog=epilog,
+    )
+
+
 def positive_int(value):
     number = int(value)
     if number < 1:
@@ -25,10 +43,37 @@ def probability(value):
 
 
 def add_collection_arguments(parser):
-    parser.add_argument("--task", required=True)
-    parser.add_argument("--planner", help="custom TaskPlanner factory, module:PlannerClass")
-    parser.add_argument("--num", type=positive_int, default=10, help="target number of successful episodes")
-    parser.add_argument("--seed-start", type=nonnegative_int, default=100000)
-    parser.add_argument("--gpu", type=nonnegative_int, default=0, help="GPU index for rendering and cuRobo")
-    parser.add_argument("--no-images", action="store_true", help="skip rendering (success-rate runs)")
-    parser.add_argument("--table-randomization", type=probability, default=0.0)
+    task = parser.add_argument_group("Task and target")
+    task.add_argument("--task", required=True, help="official task name; list planners with 'tasks --implemented'")
+    task.add_argument("--planner", metavar="MODULE:CLASS", help="override the task's registered TaskPlanner factory")
+    task.add_argument(
+        "--num",
+        type=positive_int,
+        default=10,
+        help="target total successful episodes, including those already saved in --out (not an attempt count)",
+    )
+    sampling = parser.add_argument_group("Sampling and simulation")
+    sampling.add_argument(
+        "--seed-start",
+        type=nonnegative_int,
+        default=100000,
+        help="first layout seed; previously attempted seeds in --out are skipped on resume",
+    )
+    sampling.add_argument(
+        "--gpu",
+        type=nonnegative_int,
+        default=0,
+        help="physical GPU index for rendering and cuRobo; do not remap CUDA_VISIBLE_DEVICES",
+    )
+    sampling.add_argument(
+        "--no-images",
+        action="store_true",
+        help="disable RGB rendering for faster trials; saved episodes cannot be exported to LeRobot",
+    )
+    sampling.add_argument(
+        "--table-randomization",
+        type=probability,
+        default=0.0,
+        metavar="PROBABILITY",
+        help="probability of randomizing table/floor materials per episode, from 0 (off) to 1 (always)",
+    )

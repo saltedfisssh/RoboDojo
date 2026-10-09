@@ -3,6 +3,44 @@
 #   bash scripts/expert_argus_board.sh data/expert/lerobot/stack_blocks [BOARD_NAME]
 # Then serve it:  cd $ARGUS && .venv/bin/python -m board serve --board data/boards/<BOARD_NAME> --clips data/boards/<BOARD_NAME>/clips --port 9998
 set -euo pipefail
+usage() {
+  cat <<'EOF'
+Usage: bash scripts/expert_argus_board.sh DATASET [BOARD_NAME]
+
+Build an optional Argus board from an exported expert LeRobot dataset and its
+meta/argus/ planner labels. No VLM labeling is performed.
+
+Arguments:
+  DATASET       Existing dataset directory (relative to the current directory)
+  BOARD_NAME    Argus board directory name (default: robodojo_expert)
+  -h, --help    Show this help without requiring a dataset or Argus installation
+
+Environment:
+  ARGUS_ROOT    Required absolute path to your own Argus checkout, with a working
+                .venv/bin/python and its prepare/board commands installed
+
+Creates or updates data/episodes/robodojo_expert/, data/runs/robodojo_expert/ and
+data/boards/BOARD_NAME/ under ARGUS_ROOT. Reusing a dataset basename prepares
+episodes with --force and updates its labels and matching board manifest entry.
+The script builds clips and the board; it does not start a web server.
+
+Example:
+  ARGUS_ROOT=/path/to/argus bash scripts/expert_argus_board.sh \
+    data/expert/lerobot/stack_blocks robodojo_expert
+
+To view it, run from the Argus checkout:
+  .venv/bin/python -m board serve --board data/boards/robodojo_expert \
+    --clips data/boards/robodojo_expert/clips --port 9998
+EOF
+}
+if [[ "${1:-}" == -h || "${1:-}" == --help ]]; then
+  usage
+  exit 0
+fi
+if [[ $# -lt 1 || $# -gt 2 ]]; then
+  usage >&2
+  exit 2
+fi
 DATASET="$(cd "$1" && pwd)"
 NAME="$(basename "$DATASET")"
 BOARD="${2:-robodojo_expert}"

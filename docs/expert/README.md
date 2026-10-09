@@ -7,6 +7,22 @@
 正式数据生成统一使用 `bash scripts/generate_data.sh`，Python 入口是 `python -m src.expert`。
 原来的 `scripts/expert.sh` 和 `python -m src.expert.collect` 等命令仍然兼容。
 
+各级帮助包含参数默认值、输出位置、续跑规则和使用示例。查看正式流程的帮助只需
+Python 3.11+，无需安装仿真/导出环境，也不会启动 Isaac：
+
+```bash
+bash scripts/generate_data.sh --help
+bash scripts/generate_data.sh collect --help
+bash scripts/generate_data.sh batch --help
+bash scripts/generate_data.sh dev run --help
+bash scripts/generate_data.sh dev qualify --help
+bash scripts/generate_data.sh export --help
+bash scripts/generate_data.sh restore --help
+```
+
+`expert.sh` 接受相同参数。Shell 入口的数据路径相对于仓库根目录解析；直接使用
+`python -m src.expert` 时则相对于当前工作目录。旧实验命令的帮助见 `legacy --help`。
+
 **多人开发新任务：** 见 [任务分工、Codex 迭代与验收](DEVELOPMENT.md)。
 `dev init` 创建独立任务插件和交接说明；`dev inspect/run/report/qualify` 提供布局预检、
 固定 seed 实验、失败轨迹、代码快照，以及实际导出和帧恢复验收。

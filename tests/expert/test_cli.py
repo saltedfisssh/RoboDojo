@@ -1,6 +1,7 @@
 """The public CLI and planner discovery must work before simulator bootstrap."""
 
 import json
+import os
 from pathlib import Path
 import subprocess
 import sys
@@ -11,6 +12,13 @@ from src.expert.contracts import TaskPlanner
 from src.expert.registry import BUILTINS, load_planner, official_tasks, planner_spec, registered_planners
 
 ROOT = Path(__file__).resolve().parents[2]
+HELP_COMMANDS = [
+    [],
+    ["--help"],
+    ["-h"],
+    *[[command, "--help"] for command in ("tasks", "collect", "batch", "probe", "export", "restore", "dev", "legacy")],
+    *[["dev", command, "--help"] for command in ("init", "inspect", "run", "report", "qualify")],
+]
 
 
 def test_task_inventory_without_site_packages():
@@ -30,9 +38,7 @@ def test_task_inventory_without_site_packages():
             assert row["status"] == "unimplemented"
 
 
-@pytest.mark.parametrize(
-    "command", [[], ["--help"], ["collect", "--help"], ["batch", "--help"], ["probe", "--help"], ["dev", "--help"]]
-)
+@pytest.mark.parametrize("command", HELP_COMMANDS)
 def test_help_does_not_need_simulator(command):
     result = subprocess.run(
         [sys.executable, "-S", "-m", "src.expert", *command],
@@ -41,7 +47,30 @@ def test_help_does_not_need_simulator(command):
         text=True,
     )
     assert result.returncode == 0, result.stderr
-    assert "usage:" in result.stdout
+    assert "usage:" in result.stdout.lower()
+
+
+@pytest.mark.parametrize("script", ["generate_data.sh", "expert.sh"])
+@pytest.mark.parametrize("command", HELP_COMMANDS)
+def test_shell_help_before_environment_installation(script, command, tmp_path):
+    result = subprocess.run(
+        ["bash", str(ROOT / "scripts" / script), *command],
+        cwd=tmp_path,
+        env={
+            **os.environ,
+            "ROBODOJO_VENV": str(tmp_path / "missing-simulator"),
+            "LEROBOT_VENV": str(tmp_path / "missing-export"),
+            "LEROBOT_PYTHON": str(tmp_path / "missing-python"),
+            "PYTHONHOME": str(tmp_path / "unrelated-python"),
+        },
+        capture_output=True,
+        text=True,
+        timeout=15,
+    )
+    assert result.returncode == 0, result.stderr
+    assert "usage:" in result.stdout.lower()
+    assert "Traceback" not in result.stderr
+    assert not list(tmp_path.iterdir())
 
 
 @pytest.mark.parametrize(

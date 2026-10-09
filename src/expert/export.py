@@ -14,14 +14,10 @@ Output:
   states/episode_XXXXXX.h5             per-frame physical checkpoints (no RGB)
 """
 
-import argparse
 import json
 from pathlib import Path
 
-import h5py
-import numpy as np
-
-from src.expert.argus import build as build_argus
+from src.expert.arguments import help_parser
 
 JOINTS = [f"{side}_joint_{i}" for side in ("left", "right") for i in range(7)]
 CAMERAS = ("cam_high", "cam_left_wrist", "cam_right_wrist")
@@ -67,8 +63,12 @@ def timeline_language(argus):
 
 
 def export(inputs, out, repo_id, vcodec="h264"):
+    import h5py
     from lerobot.configs.video import RGBEncoderConfig
     from lerobot.datasets.lerobot_dataset import LeRobotDataset
+    import numpy as np
+
+    from src.expert.argus import build as build_argus
 
     out = Path(out)
     stage = out.with_name(out.name + ".partial")
@@ -207,11 +207,38 @@ def write_language(root, language):
 
 
 def main(argv=None):
-    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--input", type=Path, nargs="+", required=True, help="episode .h5 files or directories")
-    ap.add_argument("--output", type=Path, required=True)
-    ap.add_argument("--repo-id", default="local/robodojo_expert")
-    ap.add_argument("--vcodec", default="h264", help="h264 (fast) or libsvtav1 (official dataset uses av1)")
+    ap = help_parser(
+        "export",
+        "Export successful expert HDF5 episodes with RGB to a local LeRobot v3 dataset.",
+        epilog="Examples:\n"
+        "  %(prog)s --input data/expert/raw/stack_blocks --output data/expert/lerobot/stack_blocks\n"
+        "  %(prog)s --input data/expert/raw/run1 data/expert/raw/run2 --output data/expert/lerobot/combined\n"
+        "\nOnly successful episodes with images are exported; --no-images collection\n"
+        "cannot be used. Failed and .partial.h5 episodes are excluded.\n"
+        "The output and its sibling <output>.partial must not already exist.\n"
+        "Outputs include videos/data, meta/argus/ labels, meta/subtasks.jsonl,\n"
+        "meta/replay.jsonl and states/ frame checkpoints for 'restore'.\n"
+        "\nNo simulator or GPU is needed. The shell launcher uses .venv-lerobot, overridden\n"
+        "by LEROBOT_VENV or LEROBOT_PYTHON. Install it with:\n"
+        "  bash scripts/install-lerobot-uv.sh\n"
+        "EXPERT_ARGUS_LABELS optionally selects reference labels (default: .cache/argus-labels).",
+    )
+    ap.add_argument(
+        "--input",
+        type=Path,
+        nargs="+",
+        required=True,
+        metavar="PATH",
+        help="one or more .h5 files or directories searched recursively for episode_*.h5",
+    )
+    ap.add_argument("--output", type=Path, required=True, metavar="DIR", help="new local LeRobot dataset directory")
+    ap.add_argument(
+        "--repo-id",
+        default="local/robodojo_expert",
+        metavar="OWNER/NAME",
+        help="LeRobot dataset identifier; this command does not upload to Hugging Face",
+    )
+    ap.add_argument("--vcodec", default="h264", help="video encoder: h264 for speed, or libsvtav1 for AV1")
     args = ap.parse_args(argv)
     paths = []
     for p in args.input:

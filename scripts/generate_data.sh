@@ -4,11 +4,21 @@ set -euo pipefail
 GENERATION_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 export PYTHONUNBUFFERED=1
 cd "${GENERATION_ROOT}"
-if [[ "${1:-}" == "export" ]]; then
-  exec bash "$GENERATION_ROOT/scripts/run-lerobot.sh" -m src.expert "$@"
-elif [[ "${1:-}" == "legacy" ]]; then
+if [[ "${1:-}" == "legacy" ]]; then
   shift
   exec bash "$GENERATION_ROOT/scripts/datagen-uv.sh" "$@"
+fi
+# Help must work before either the simulator or export environment is installed.
+if [[ $# -eq 0 ]]; then
+  exec python3 -E -S -m src.expert
+fi
+for arg in "$@"; do
+  if [[ "$arg" == "-h" || "$arg" == "--help" ]]; then
+    exec python3 -E -S -m src.expert "$@"
+  fi
+done
+if [[ "$1" == "export" ]]; then
+  exec bash "$GENERATION_ROOT/scripts/run-lerobot.sh" -m src.expert "$@"
 fi
 source "$GENERATION_ROOT/scripts/internal/uv_env.sh"
 robodojo_use_uv

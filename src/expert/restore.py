@@ -2,10 +2,10 @@
 
 Examples:
   # restore frame 120 of a raw episode, check the error, replay 60 recorded actions
-  bash scripts/expert.sh restore --episode data/expert/stack_blocks/episode_0100000.h5 --frame 120 --steps 60
+  bash scripts/generate_data.sh restore --episode data/expert/raw/stack_blocks/episode_0100000.h5 --frame 120 --steps 60
 
   # atomic test from the start of subtask 1 in an exported dataset, driven by a policy server
-  bash scripts/expert.sh restore --dataset data/expert_lerobot/stack_blocks --episode-index 3 --subtask 1 \\
+  bash scripts/generate_data.sh restore --dataset data/expert/lerobot/stack_blocks --episode-index 3 --subtask 1 \\
       --policy starVLA --policy-url ws://127.0.0.1:6000 --steps 300 --report out.json
 
 Selection: exactly one of --frame / --time (s) / --subtask (planner subtask id).
@@ -14,7 +14,6 @@ through an env that exposes the same get_obs/take_action/is_episode_end as EvalE
 The episode ends when the atomic goal (subtask) or the full task succeeds, or after --steps.
 """
 
-import argparse
 from copy import deepcopy
 import json
 import os
@@ -22,34 +21,81 @@ from pathlib import Path
 import sys
 import time
 
-import numpy as np
-
-from src.expert.arguments import nonnegative_int
+from src.expert.arguments import help_parser, nonnegative_int
 
 
 def parse(argv=None):
-    ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    src = ap.add_mutually_exclusive_group(required=True)
+    ap = help_parser(
+        "restore",
+        "Restore a recorded physical checkpoint in Isaac, then replay actions or run a policy.",
+        epilog="Examples:\n"
+        "  %(prog)s --episode data/expert/raw/stack_blocks/episode_0100000.h5 --frame 120 --steps 60\n"
+        "  %(prog)s --dataset data/expert/lerobot/stack_blocks --episode-index 0 --subtask 1 --steps 120\n"
+        "  %(prog)s --dataset data/expert/lerobot/stack_blocks --frame 0 --steps 300 \\\n"
+        "    --policy starVLA --policy-url ws://127.0.0.1:6000 --report restore.json\n"
+        "\nChoose exactly one source (--episode or --dataset) and one position\n"
+        "(--frame, --time or --subtask). Frame and episode indices are zero-based.\n"
+        "With --steps 0 only the checkpoint is restored and checked; no actions run.\n"
+        "A policy run needs an already-running server and its XPolicyLab deploy adapter.\n"
+        "Keep images enabled for vision policies and --video. The JSON report is printed\n"
+        "to stdout; --report also saves it. Create parent directories for report/video\n"
+        "paths first. Physics replay is not guaranteed to be bitwise deterministic.",
+    )
+    source = ap.add_argument_group("Source (choose one)")
+    src = source.add_mutually_exclusive_group(required=True)
     src.add_argument("--episode", type=Path, help="raw expert episode .h5")
     src.add_argument("--dataset", type=Path, help="exported LeRobot root (uses states/ sidecars)")
-    ap.add_argument("--episode-index", type=int, default=0)
-    sel = ap.add_mutually_exclusive_group(required=True)
-    sel.add_argument("--frame", type=int)
-    sel.add_argument("--time", type=float)
-    sel.add_argument("--subtask", type=int)
-    ap.add_argument("--steps", type=int, default=0, help="actions to run after restoring")
-    ap.add_argument("--policy", help="XPolicyLab policy name; omit to replay recorded actions")
-    ap.add_argument("--policy-url", default=os.environ.get("ROBODOJO_POLICY_URL", "ws://127.0.0.1:6000"))
-    ap.add_argument("--instruction", choices=("subtask", "task"), default="subtask")
-    ap.add_argument("--report", type=Path)
-    ap.add_argument("--video", type=Path, help="write cam_high mp4 of the continuation")
-    ap.add_argument("--no-images", action="store_true")
-    ap.add_argument("--gpu", type=nonnegative_int, default=0)
+    source.add_argument(
+        "--episode-index", type=int, default=0, help="zero-based episode index within --dataset; ignored with --episode"
+    )
+    position = ap.add_argument_group("Restore position (choose one)")
+    sel = position.add_mutually_exclusive_group(required=True)
+    sel.add_argument("--frame", type=int, help="zero-based recorded frame index")
+    sel.add_argument(
+        "--time", type=float, metavar="SECONDS", help="seconds from episode start, rounded down to the recorded frame"
+    )
+    sel.add_argument(
+        "--subtask", type=int, metavar="ID", help="planner subtask ID; restore its first non-background segment"
+    )
+    continuation = ap.add_argument_group("Continuation")
+    continuation.add_argument(
+        "--steps", type=int, default=0, help="maximum actions after restoring; 0 only checks the restored state"
+    )
+    continuation.add_argument("--policy", help="XPolicyLab policy name; omit to replay recorded actions")
+    continuation.add_argument(
+        "--policy-url",
+        default=os.environ.get("ROBODOJO_POLICY_URL", "ws://127.0.0.1:6000"),
+        metavar="URL",
+        help="server URL when --policy is set; ROBODOJO_POLICY_URL overrides the default",
+    )
+    continuation.add_argument(
+        "--instruction",
+        choices=("subtask", "task"),
+        default="subtask",
+        help="instruction sent to the policy; subtask falls back to full task text when unavailable",
+    )
+    output = ap.add_argument_group("Output and simulation")
+    output.add_argument(
+        "--report", type=Path, metavar="JSON", help="also write restore errors and continuation results to this file"
+    )
+    output.add_argument(
+        "--video",
+        type=Path,
+        metavar="MP4",
+        help="save cam_high RGB from the continuation; requires images and --steps > 0",
+    )
+    output.add_argument(
+        "--no-images", action="store_true", help="disable camera rendering for state-only restore/replay"
+    )
+    output.add_argument(
+        "--gpu", type=nonnegative_int, default=0, help="physical GPU index; do not remap CUDA_VISIBLE_DEVICES"
+    )
     return ap.parse_args(argv)
 
 
 def load_episode(args):
     import h5py
+    import numpy as np
 
     if args.episode is not None:
         path = args.episode
@@ -77,6 +123,7 @@ def load_episode(args):
 
 def checkpoint(f, frame):
     import h5py
+    import numpy as np
 
     g = f["checkpoint"]
     arrays = {}
@@ -126,6 +173,8 @@ class Shim:
     """What RigidStateAdapter expects from the action side: command and home."""
 
     def __init__(self, command, home):
+        import numpy as np
+
         self.command, self.home = np.asarray(command, float), np.asarray(home, float)
 
 
@@ -160,6 +209,8 @@ def main(argv=None):
 
 
 def restore_episode(args, env, path, f, meta, segments, subtasks, frame):
+    import numpy as np
+
     from src.datagen.state import RigidStateAdapter
 
     layout = json.loads(f.attrs["layout"])
