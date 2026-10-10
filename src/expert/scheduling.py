@@ -16,7 +16,7 @@ import threading
 import time
 import uuid
 
-from src.expert.storage import attempted_seeds, episode_files, log_attempt
+from src.expert.storage import attempted_seeds, episode_count, episode_exists, episode_metadata, log_attempt
 
 
 @contextmanager
@@ -51,7 +51,7 @@ class WorkQueue:
         self.task = args.task
         self.planner = planner
         self.target = args.num
-        self.successes = len(episode_files(args.out))
+        self.successes = episode_count(args.out)
         self.budget = max(0, self.target - self.successes) * args.attempts_per_episode
         self.next_seed = args.seed_start
         self.used = reserved_seeds(args.out)
@@ -108,7 +108,7 @@ class WorkQueue:
                 raise ValueError(f"Unexpected completion from worker {worker}: {row['seed']}")
             if row["result"] == "success":
                 path = self.out / f"episode_{row['seed']:07d}.h5"
-                if not path.is_file():
+                if not episode_exists(self.out, row["seed"]):
                     raise ValueError(f"Worker reported success before saving {path}")
                 self.successes += 1
             del self.inflight[worker]
@@ -123,8 +123,8 @@ class WorkQueue:
             self.exited.add(worker)
             seed = self.inflight.get(worker)
             if seed is not None:
-                # A crash can happen after atomic HDF5 save or attempt logging,
-                # but before the worker acknowledges completion over the socket.
+                # A crash can happen after save, background conversion or attempt
+                # logging, but before the worker acknowledges completion.
                 log = self.out / f"attempts_w{worker}.jsonl"
                 rows = [json.loads(line) for line in log.read_text().splitlines()] if log.exists() else []
                 rows = [row for row in rows if row["seed"] == seed]
@@ -133,11 +133,8 @@ class WorkQueue:
                 else:
                     row = dict(seed=seed, task=self.task, planner=self.planner, gpu=self.worker_gpus[worker])
                     path = self.out / f"episode_{seed:07d}.h5"
-                    if path.exists():
-                        import h5py
-
-                        with h5py.File(path, "r") as episode:
-                            meta = json.loads(episode.attrs["meta"])
+                    if episode_exists(self.out, seed):
+                        meta = episode_metadata(self.out, seed)
                         if not meta["success"] or meta["seed"] != seed:
                             raise ValueError(f"Invalid recovered episode: {path}")
                         row.update(result="success", steps=meta["num_frames"], file=str(path), seconds=0)

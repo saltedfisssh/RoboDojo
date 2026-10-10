@@ -1,5 +1,6 @@
 """Collect to a shared success target with persistent, GPU-bound workers."""
 
+import argparse
 from contextlib import ExitStack
 import json
 import os
@@ -11,7 +12,7 @@ import time
 from src.expert.arguments import add_collection_arguments, help_parser, nonnegative_int, positive_int
 from src.expert.registry import load_planner, planner_spec
 from src.expert.scheduling import WorkQueue, batch_lock, serve_queue
-from src.expert.storage import episode_files, prepare_output, read_attempts
+from src.expert.storage import episode_count, prepare_output, read_attempts
 
 
 def worker_commands(args, have):
@@ -53,6 +54,10 @@ def worker_commands(args, have):
             command += ["--planner", args.planner]
         if args.no_images:
             command.append("--no-images")
+        if getattr(args, "no_checkpoints", False):
+            command.append("--no-checkpoints")
+        if getattr(args, "background_export", False):
+            command += ["--background-export", "--max-pending-episodes", str(args.max_pending_episodes)]
         commands.append((worker, command))
     return commands
 
@@ -75,7 +80,7 @@ def summarize(out):
         "layout_errors": sum(row["result"] == "layout_error" for row in rows),
         "median_steps": steps[len(steps) // 2] if steps else None,
         "failure_reasons": reasons,
-        "episodes_on_disk": len(episode_files(out)),
+        "episodes_on_disk": episode_count(out),
     }
 
 
@@ -97,7 +102,14 @@ def run_workers(args, commands, queue=None):
                             env={**os.environ, "PYTHONUNBUFFERED": "1"},
                             # Keep the output locked until children exit even
                             # if the coordinator is killed without cleanup.
-                            pass_fds=(args.batch_lock_fd,) if hasattr(args, "batch_lock_fd") else (),
+                            pass_fds=tuple(
+                                fd
+                                for fd in (
+                                    getattr(args, "batch_lock_fd", None),
+                                    getattr(args, "pipeline_lock_fd", None),
+                                )
+                                if fd is not None
+                            ),
                         ),
                     )
                 )
@@ -140,6 +152,7 @@ def main(argv=None):
         "Collect to a shared success target using multiple persistent Isaac worker processes.",
         epilog="Examples:\n"
         "  %(prog)s --task stack_blocks --num 100 --out data/expert/raw/stack_blocks\n"
+        "  %(prog)s --task stack_blocks --num 100 --format lerobot-v3 --out data/expert/lerobot/stack_blocks\n"
         "  %(prog)s --task stack_blocks --num 100 --gpu-ids 0 1 --workers 4 --out data/expert/raw/multi_gpu\n"
         "\n--workers is the total process count, not the count per GPU. GPU IDs are\n"
         "space-separated; workers are assigned round-robin. Without --gpu-ids, all\n"
@@ -147,8 +160,10 @@ def main(argv=None):
         "\nResume by rerunning with the same --out and recording settings. --num is the\n"
         "final total, not the number to add. Dynamic scheduling shares the remaining\n"
         "target; static scheduling gives each worker a fixed quota.\n"
-        "Output: episode_*.h5, attempts_w*.jsonl, logs/worker*.log; dynamic runs also\n"
-        "write scheduling_*.jsonl. Exit status: 0 if the target is reached without worker\n"
+        "Raw output: episode_*.h5, attempts_w*.jsonl, logs/worker*.log; dynamic runs also\n"
+        "write scheduling_*.jsonl. --format lerobot-v3 converts and validates each success\n"
+        "in the background, then deletes its HDF5; RGB is required, checkpoints are disabled.\n"
+        "Exit status: 0 if the target is reached without worker\n"
         "errors, otherwise 1. See docs/expert/README.md for multi-GPU setup.",
     )
     add_collection_arguments(parser)
@@ -164,7 +179,7 @@ def main(argv=None):
         help="physical GPU IDs, e.g. 0 1 2 3; assigned round-robin (default: all workers on --gpu)",
     )
     parser.add_argument(
-        "--out", type=Path, required=True, metavar="DIR", help="raw dataset directory to create or resume"
+        "--out", type=Path, required=True, metavar="DIR", help="dataset directory to create or resume (--format)"
     )
     workers.add_argument(
         "--attempts-per-episode",
@@ -185,6 +200,7 @@ def main(argv=None):
         metavar="SECONDS",
         help="delay between Isaac worker starts, from 0 to 60 seconds",
     )
+    parser.add_argument("--pipeline-lock-fd", type=nonnegative_int, help=argparse.SUPPRESS)
     args = parser.parse_args(argv)
     if args.workers is None:
         args.workers = len(args.gpu_ids) if args.gpu_ids else 3
@@ -192,6 +208,10 @@ def main(argv=None):
         parser.error("--startup-delay must be between 0 and 60")
     try:
         spec = planner_spec(args.task, args.planner)
+        if args.format == "lerobot-v3":
+            from src.expert.training import collect_training
+
+            return collect_training("batch", args, sys.argv[1:] if argv is None else argv, spec)
         load_planner(spec)  # reject missing/broken plugins before starting any workers
         with batch_lock(args.out) as lock_fd:
             args.batch_lock_fd = lock_fd
@@ -208,10 +228,11 @@ def run_batch(args, spec):
         sampler=spec.sampler,
         images=not args.no_images,
         table_randomization=args.table_randomization,
+        checkpoints=not getattr(args, "no_checkpoints", False),
     )
     read_attempts(args.out)  # fail early on corrupt resume logs
     (args.out / "logs").mkdir(exist_ok=True)
-    have = len(episode_files(args.out))
+    have = episode_count(args.out)
     commands = worker_commands(args, have)
     worker_gpus = {worker: int(command[command.index("--gpu") + 1]) for worker, command in commands}
     started = time.monotonic()

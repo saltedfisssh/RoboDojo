@@ -77,3 +77,27 @@ def add_collection_arguments(parser):
         metavar="PROBABILITY",
         help="probability of randomizing table/floor materials per episode, from 0 (off) to 1 (always)",
     )
+    output = parser.add_argument_group("Recording format")
+    output.add_argument(
+        "--format",
+        choices=("raw", "lerobot-v3"),
+        default="raw",
+        help="raw: expert HDF5; lerobot-v3: convert and validate each success in the background, then delete its HDF5",
+    )
+    output.add_argument(
+        "--no-checkpoints",
+        action="store_true",
+        help="skip physical frame checkpoints; automatically enabled by --format lerobot-v3",
+    )
+    output.add_argument(
+        "--export-workers",
+        type=positive_int,
+        default=1,
+        help="concurrent background episode conversions for --format lerobot-v3 (CPU; separate LeRobot environment)",
+    )
+    output.add_argument(
+        "--max-pending-episodes",
+        type=positive_int,
+        help="pause new attempts at this HDF5 backlog (lerobot-v3 default: 2 x Isaac workers, minimum 2)",
+    )
+    parser.add_argument("--background-export", action="store_true", help=argparse.SUPPRESS)

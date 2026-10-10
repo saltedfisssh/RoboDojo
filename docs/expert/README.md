@@ -28,6 +28,58 @@ bash scripts/generate_data.sh restore --help
 固定 seed 实验、失败轨迹、代码快照，以及实际导出和帧恢复验收。
 完整示例见 [stack_blocks_by_language 实测](../../src/expert/task_plugins/stack_blocks_by_language/VALIDATION.md)。
 
+### 仅保存 LeRobot v3 训练数据
+
+不需要 Isaac 帧恢复时，可以直接在 `collect` 或 `batch` 上指定 `--format lerobot-v3`：
+
+```bash
+# 单进程：采集、导出、验收和临时数据清理由一个命令完成
+bash scripts/generate_data.sh collect --task stack_blocks --num 100 \
+  --format lerobot-v3 --out data/expert/lerobot/stack_blocks
+
+# 多 GPU：保留共享成功目标与动态调度
+bash scripts/generate_data.sh batch --task stack_blocks --num 100 \
+  --gpu-ids 0 1 2 3 4 5 6 7 --startup-delay 0 \
+  --format lerobot-v3 --out data/expert/lerobot/stack_blocks
+
+# 独立验收最终训练数据，不依赖原始 HDF5 或帧恢复检查点
+bash scripts/run-lerobot.sh scripts/internal/validate_expert_dataset.py \
+  --training-only --dataset data/expert/lerobot/stack_blocks \
+  --report data/expert/validation_training.json
+```
+
+最终 `--out` 是可直接用官方 `LeRobotDataset` 读取的 v3 数据集，包含 `data/` 的 Parquet、
+三路 RGB 的 `videos/`、标准 `meta/` 元数据，以及用于续跑的 `meta/collection.json`。
+训练特征为 `observation.state`、`action`、三路 `observation.images.*` 和 LeRobot 自动维护的索引、时间、任务字段。
+不生成 `states/`、Argus 标注、planner 索引或额外语言标注，也不录制逐帧物理检查点。
+该模式需要 RGB，不能与 `--no-images`、`--diagnostics`、`--save-failures` 合用。
+
+每条成功轨迹先原子保存到隐藏目录 `.<输出目录名>.collection/raw/` 的 HDF5。
+独立 LeRobot 环境中的后台 CPU 进程随即将它转换成单条 v3 数据集；Isaac worker 可继续规划和渲染下一条轨迹。
+转换验收会比对全部动作/状态、用官方读取器抽查首/中/末帧，并解码三路视频的全部帧。
+**每条验收通过后立即记录转换完成并删除该条 HDF5，不等待整批采集结束。** `.partial.h5` 不会进入转换队列。
+采集完成后，用 LeRobot 官方合并器汇总已验收的 v3 数据集，再验收并发布最终 `--out`；这一阶段不依赖 HDF5。
+
+`--export-workers` 控制同时转换的轨迹数（默认 1，后台进程不使用 GPU）。
+`--max-pending-episodes` 控制待转换 HDF5 的积压阈值（默认 Isaac worker 数 × 2，至少 2）。
+积压达到阈值时，worker 在下一次尝试开始前等待转换腾出空间；已经开始的轨迹仍可完成，
+因此临时 HDF5 数量最多还可能增加在途 worker 数，需为这些轨迹预留 RGB 磁盘空间。
+
+转换失败时停止采集，保留该条 HDF5；采集失败、合并或发布中断时保留未转换 HDF5 和已验收 v3 数据集。
+重跑原命令即可续跑，已转换轨迹通过小型完成记录计入配额，不会因删除 HDF5 而重复采集。
+发布成功后清理暂存数据，隐藏目录保留锁、配置及转换日志；已达到目标时不启动 Isaac 或导出进程。
+增大 `--num` 会只采尚缺条数、跳过此前已尝试的 seed，并合并到已有 v3 数据集；可修改 worker 数。
+任务、planner 和材质随机化设置必须保持一致。
+
+如果原始 HDF5 已经存在，只需导出纯训练数据：
+
+```bash
+bash scripts/generate_data.sh export --training-only \
+  --input data/expert/raw/stack_blocks --output data/expert/lerobot/stack_blocks
+```
+
+单独的 `export --training-only` 不删除输入文件。原有默认 `raw` 采集和完整导出流程继续用于帧恢复、Argus 标注及任务验收。
+
 `src/datagen`（见 [旧实验文档](../datagen/README.md)）保留固定布局实验、诊断程序和旧数据恢复；
 其中多数任务仅验证过固定资产和毫米级扰动，不能直接当作正式分布的 planner。
 正式管线仍复用它的 `state.py` 及相关物理检查点适配器，以保持已有数据可恢复；采集与任务规划流程相互独立。

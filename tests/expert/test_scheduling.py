@@ -13,8 +13,9 @@ import h5py
 import pytest
 
 from src.expert import batch
+from src.expert.diagnostics import write_json
 from src.expert.scheduling import WorkQueue, batch_lock, serve_queue
-from src.expert.storage import log_attempt, read_attempts
+from src.expert.storage import CONVERTED_SCHEMA, episode_count, log_attempt, read_attempts
 
 
 def queue_args(out, target=5, workers=2, attempts=4):
@@ -164,12 +165,19 @@ def test_resume_skips_failed_saved_and_interrupted_seeds(tmp_path):
 
 
 @pytest.mark.parametrize("attempt_logged", [False, True])
-def test_crash_after_save_recovers_success_exactly_once(tmp_path, attempt_logged):
+@pytest.mark.parametrize("converted", [False, True])
+def test_crash_after_save_recovers_success_exactly_once(tmp_path, attempt_logged, converted):
     queue = WorkQueue(queue_args(tmp_path, target=1), {0: 0}, "test:Planner")
     seed = queue.acquire(0)["seed"]
     path = tmp_path / f"episode_{seed:07d}.h5"
     with h5py.File(path, "w") as episode:
         episode.attrs["meta"] = json.dumps(dict(seed=seed, success=True, num_frames=3))
+    if converted:
+        write_json(
+            tmp_path / "converted" / f"{path.stem}.json",
+            dict(schema=CONVERTED_SCHEMA, seed=seed, success=True, num_frames=3),
+        )
+        path.unlink()
     if attempt_logged:
         log_attempt(tmp_path, 0, dict(seed=seed, task="stack_blocks", result="success", steps=3, seconds=0))
     queue.worker_exited(0, 7)
@@ -178,6 +186,27 @@ def test_crash_after_save_recovers_success_exactly_once(tmp_path, attempt_logged
     assert queue.successes == queue.completed == 1
     assert len(read_attempts(tmp_path)) == 1
     assert queue.acquire(0)["seed"] is None
+
+
+def test_deleted_hdf5_remains_a_success_for_acknowledgement_and_resume(tmp_path):
+    args = queue_args(tmp_path, target=2)
+    queue = WorkQueue(args, {0: 0}, "test:Planner")
+    seed = queue.acquire(0)["seed"]
+    path = tmp_path / f"episode_{seed:07d}.h5"
+    path.touch()
+    write_json(
+        tmp_path / "converted" / f"{path.stem}.json",
+        dict(schema=CONVERTED_SCHEMA, seed=seed, success=True, num_frames=3),
+    )
+    assert episode_count(tmp_path) == 1  # raw and converted overlap during handoff
+    path.unlink()
+    row = dict(seed=seed, task="stack_blocks", result="success", steps=3)
+    log_attempt(tmp_path, 0, row)
+    queue.complete(0, row)
+    assert queue.successes == 1
+    resumed = WorkQueue(args, {0: 0}, "test:Planner")
+    assert resumed.successes == 1 and resumed.budget == 4
+    assert resumed.acquire(0)["seed"] == 1
 
 
 def test_exited_worker_cannot_receive_a_late_assignment(tmp_path):

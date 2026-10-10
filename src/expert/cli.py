@@ -57,6 +57,7 @@ def main(argv=None):
         "  %(prog)s tasks --implemented\n"
         "  %(prog)s collect --task stack_blocks --num 3 --no-images --seed-start 0\n"
         "  %(prog)s batch --task stack_blocks --num 100 --out data/expert/raw/stack_blocks\n"
+        "  %(prog)s batch --task stack_blocks --num 100 --format lerobot-v3 --out data/expert/lerobot/stack_blocks\n"
         "  %(prog)s export --input data/expert/raw/stack_blocks --output data/expert/lerobot/stack_blocks\n"
         "\nHelp:\n"
         "  %(prog)s collect --help\n"

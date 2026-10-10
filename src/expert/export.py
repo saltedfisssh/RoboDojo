@@ -4,6 +4,9 @@ Runs in the LeRobot venv (``bash scripts/expert.sh export``). Per episode it
 also writes the Argus-schema label JSON and a state sidecar for restoring any
 frame in Isaac.
 
+With ``--training-only``, only standard training features, videos and metadata
+are written. Labels, planner indices and physical checkpoints are omitted.
+
 Output:
   data/, videos/, meta/info.json ...   same features as RoboDojo_lerobot_v30_video
   + subtask_index, primitive_index     per-frame planner ids (int64)
@@ -62,13 +65,11 @@ def timeline_language(argus):
     return rows
 
 
-def export(inputs, out, repo_id, vcodec="h264"):
+def export(inputs, out, repo_id, vcodec="h264", *, training_only=False):
     import h5py
     from lerobot.configs.video import RGBEncoderConfig
     from lerobot.datasets.lerobot_dataset import LeRobotDataset
     import numpy as np
-
-    from src.expert.argus import build as build_argus
 
     out = Path(out)
     stage = out.with_name(out.name + ".partial")
@@ -87,13 +88,16 @@ def export(inputs, out, repo_id, vcodec="h264"):
     features = {
         "observation.state": {"dtype": "float32", "shape": (14,), "names": [JOINTS]},
         "action": {"dtype": "float32", "shape": (14,), "names": [JOINTS]},
-        "subtask_index": {"dtype": "int64", "shape": (1,), "names": None},
-        "primitive_index": {"dtype": "int64", "shape": (1,), "names": None},
         **{
             f"observation.images.{c}": {"dtype": "video", "shape": shape, "names": ["height", "width", "channels"]}
             for c in CAMERAS
         },
     }
+    if not training_only:
+        features.update(
+            subtask_index={"dtype": "int64", "shape": (1,), "names": None},
+            primitive_index={"dtype": "int64", "shape": (1,), "names": None},
+        )
     ds = LeRobotDataset.create(
         repo_id,
         FPS,
@@ -105,19 +109,23 @@ def export(inputs, out, repo_id, vcodec="h264"):
         rgb_encoder=RGBEncoderConfig(vcodec=vcodec, crf=20, preset="fast", g=2),
         encoder_threads=2,
     )
-    (stage / "states").mkdir()
-    (stage / "meta/argus").mkdir(parents=True, exist_ok=True)
+    if not training_only:
+        from src.expert.argus import build as build_argus
+
+        (stage / "states").mkdir()
+        (stage / "meta/argus").mkdir(parents=True, exist_ok=True)
     language, replay, spans = {}, [], []
     try:
         for path in files:
             ep = ds.num_episodes
-            argus = build_argus(path, episode_index=ep)
-            argus["episode_dir"] = f"episode_{ep:06d}"
-            (stage / f"meta/argus/episode_{ep:06d}.json").write_text(json.dumps(argus, indent=1))
-            language[ep] = timeline_language(argus)
+            if not training_only:
+                argus = build_argus(path, episode_index=ep)
+                argus["episode_dir"] = f"episode_{ep:06d}"
+                (stage / f"meta/argus/episode_{ep:06d}.json").write_text(json.dumps(argus, indent=1))
+                language[ep] = timeline_language(argus)
             with h5py.File(path, "r") as f:
                 meta = json.loads(f.attrs["meta"])
-                segments = json.loads(f.attrs["segments"])
+                segments = json.loads(f.attrs["segments"]) if not training_only else []
                 n = meta["num_frames"]
                 sub_of = np.full(n, -1, np.int64)
                 prim_of = np.full(n, -1, np.int64)
@@ -136,17 +144,21 @@ def export(inputs, out, repo_id, vcodec="h264"):
                 state, action = f["state"][()], f["action"][()]
                 imgs = {c: f[f"images/{c}"] for c in CAMERAS}
                 for i in range(n):
-                    ds.add_frame(
-                        {
-                            "observation.state": state[i].astype(np.float32),
-                            "action": action[i].astype(np.float32),
-                            "subtask_index": np.array([sub_of[i]], np.int64),
-                            "primitive_index": np.array([prim_of[i]], np.int64),
-                            "task": meta["instruction"],
-                            **{f"observation.images.{c}": imgs[c][i] for c in CAMERAS},
-                        }
-                    )
+                    frame = {
+                        "observation.state": state[i].astype(np.float32),
+                        "action": action[i].astype(np.float32),
+                        "task": meta["instruction"],
+                        **{f"observation.images.{c}": imgs[c][i] for c in CAMERAS},
+                    }
+                    if not training_only:
+                        frame.update(
+                            subtask_index=np.array([sub_of[i]], np.int64),
+                            primitive_index=np.array([prim_of[i]], np.int64),
+                        )
+                    ds.add_frame(frame)
                 ds.save_episode()
+                if training_only:
+                    continue
                 side = f"states/episode_{ep:06d}.h5"
                 with h5py.File(stage / side, "w") as dst:
                     for k, v in f.attrs.items():
@@ -166,11 +178,14 @@ def export(inputs, out, repo_id, vcodec="h264"):
             )
     finally:
         ds.finalize()
-    write_language(stage, language)
-    (stage / "meta/replay.jsonl").write_text("".join(json.dumps(r) + "\n" for r in replay))
-    (stage / "meta/subtasks.jsonl").write_text("".join(json.dumps(r) + "\n" for r in spans))
+    if training_only:
+        normalize_video_features(stage)
+    else:
+        write_language(stage, language)
+        (stage / "meta/replay.jsonl").write_text("".join(json.dumps(r) + "\n" for r in replay))
+        (stage / "meta/subtasks.jsonl").write_text("".join(json.dumps(r) + "\n" for r in spans))
     stage.rename(out)
-    return len(replay)
+    return len(files)
 
 
 def write_language(root, language):
@@ -198,7 +213,14 @@ def write_language(root, language):
     info_path = root / "meta/info.json"
     info = json.loads(info_path.read_text())
     info["features"].update(language_feature_info())
+    info_path.write_text(json.dumps(info, indent=2) + "\n")
+    normalize_video_features(root)
+
+
+def normalize_video_features(root):
     # Match the official dataset's image metadata convention (channels-first).
+    info_path = root / "meta/info.json"
+    info = json.loads(info_path.read_text())
     for key, feat in info["features"].items():
         if feat.get("dtype") == "video" and feat["names"][:2] == ["height", "width"]:
             h, w, c = feat["shape"]
@@ -213,11 +235,14 @@ def main(argv=None):
         epilog="Examples:\n"
         "  %(prog)s --input data/expert/raw/stack_blocks --output data/expert/lerobot/stack_blocks\n"
         "  %(prog)s --input data/expert/raw/run1 data/expert/raw/run2 --output data/expert/lerobot/combined\n"
+        "  %(prog)s --training-only --input data/expert/raw/stack_blocks --output data/expert/lerobot/training\n"
         "\nOnly successful episodes with images are exported; --no-images collection\n"
         "cannot be used. Failed and .partial.h5 episodes are excluded.\n"
         "The output and its sibling <output>.partial must not already exist.\n"
         "Outputs include videos/data, meta/argus/ labels, meta/subtasks.jsonl,\n"
         "meta/replay.jsonl and states/ frame checkpoints for 'restore'.\n"
+        "--training-only omits these additions and writes standard training data only.\n"
+        "Input files are preserved with either export mode.\n"
         "\nNo simulator or GPU is needed. The shell launcher uses .venv-lerobot, overridden\n"
         "by LEROBOT_VENV or LEROBOT_PYTHON. Install it with:\n"
         "  bash scripts/install-lerobot-uv.sh\n"
@@ -239,12 +264,17 @@ def main(argv=None):
         help="LeRobot dataset identifier; this command does not upload to Hugging Face",
     )
     ap.add_argument("--vcodec", default="h264", help="video encoder: h264 for speed, or libsvtav1 for AV1")
+    ap.add_argument(
+        "--training-only",
+        action="store_true",
+        help="only standard training features, videos and metadata; omit Argus, planner IDs and HDF5 state sidecars",
+    )
     args = ap.parse_args(argv)
     paths = []
     for p in args.input:
         paths.extend(sorted(p.rglob("episode_*.h5")) if p.is_dir() else [p])
     paths = [p for p in paths if not p.name.endswith(".partial.h5")]
-    n = export(paths, args.output, args.repo_id, args.vcodec)
+    n = export(paths, args.output, args.repo_id, args.vcodec, training_only=args.training_only)
     print(json.dumps({"episodes": n, "root": str(args.output)}))
 
 

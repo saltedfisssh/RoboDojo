@@ -80,9 +80,17 @@ def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--dataset", type=Path, required=True)
     parser.add_argument("--report", type=Path, required=True)
+    parser.add_argument(
+        "--training-only", action="store_true", help="validate standard v3 data without state/Argus sidecars"
+    )
     args = parser.parse_args()
     started = time.monotonic()
-    report = validate(args.dataset)
+    if args.training_only:
+        from src.expert.training import validate_training
+
+        report = validate_training(args.dataset)
+    else:
+        report = validate(args.dataset)
     report["validation_seconds"] = time.monotonic() - started
     args.report.write_text(json.dumps(report, indent=2) + "\n")
     print(json.dumps(report), flush=True)

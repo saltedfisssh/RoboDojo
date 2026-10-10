@@ -5,12 +5,13 @@ from contextlib import nullcontext
 from dataclasses import asdict
 import json
 from pathlib import Path
+import sys
 import time
 import traceback
 
 from src.expert.arguments import add_collection_arguments, help_parser, nonnegative_int, positive_int
 from src.expert.registry import load_planner, load_sampler, planner_spec
-from src.expert.storage import attempted_seeds, episode_files, log_attempt, prepare_output
+from src.expert.storage import attempted_seeds, episode_count, episode_files, log_attempt, prepare_output
 
 
 def parse(argv=None):
@@ -20,9 +21,12 @@ def parse(argv=None):
         epilog="Examples:\n"
         "  %(prog)s --task stack_blocks --num 20 --no-images --seed-start 0\n"
         "  %(prog)s --task stack_blocks --num 100 --out data/expert/raw/stack_blocks\n"
+        "  %(prog)s --task stack_blocks --num 100 --format lerobot-v3 --out data/expert/lerobot/stack_blocks\n"
         "  %(prog)s --task stack_blocks --num 3 --seeds 0 1 2 --no-images\n"
         "\nResume: reuse --out with the same task, planner and recording settings.\n"
         "Existing successes count toward --num; previously attempted seeds are skipped.\n"
+        "With --format lerobot-v3, each success is converted and validated in the background\n"
+        "while Isaac continues collecting; its HDF5 is then deleted. RGB and --out are required.\n"
         "Fixed --seeds are each tried once, ignoring --seed-start, --seed-stride and\n"
         "--max-attempts. All listed seeds run even if --num is reached early.\n"
         "Exit status: 0 when --num successes are reached, 1 if the target is unmet.\n"
@@ -46,7 +50,7 @@ def parse(argv=None):
         "--out",
         type=Path,
         metavar="DIR",
-        help="save successful episode_*.h5 and attempt logs here; omit for a trial without saved data",
+        help="output directory (raw HDF5 or LeRobot v3 according to --format); omit for an unsaved raw trial",
     )
     parser.add_argument("--additional", action="store_true", help=argparse.SUPPRESS)
     parser.add_argument("--scheduler", help=argparse.SUPPRESS)
@@ -92,7 +96,13 @@ def collect_attempt(args, spec, factory, env, sampler, seed):
             from src.expert.recorder import Recorder
 
             recorder = Recorder(
-                env, args.task, seed, layout, images=not args.no_images, planner_entrypoint=spec.entrypoint
+                env,
+                args.task,
+                seed,
+                layout,
+                images=not args.no_images,
+                checkpoints=not args.no_checkpoints,
+                planner_entrypoint=spec.entrypoint,
             )
         result = run_episode(env, factory, task=args.task, seed=seed, layout=layout, recorder=recorder)
         row.update(asdict(result))
@@ -116,6 +126,14 @@ def collect_attempt(args, spec, factory, env, sampler, seed):
     return row
 
 
+def wait_for_conversion(args):
+    if args.background_export:
+        if args.out is None or args.max_pending_episodes is None:
+            raise ValueError("Background collection requires --out and --max-pending-episodes")
+        while len(episode_files(args.out)) >= args.max_pending_episodes:
+            time.sleep(0.1)
+
+
 def collect(args, spec, factory):
     from src.expert.runtime import simulation_session
     from src.expert.scheduling import WorkerClient
@@ -127,6 +145,7 @@ def collect(args, spec, factory):
         sampler=spec.sampler,
         images=not args.no_images,
         table_randomization=args.table_randomization,
+        checkpoints=not args.no_checkpoints,
     )
     done = attempted_seeds(args.out)
     if args.seeds is not None:
@@ -137,7 +156,7 @@ def collect(args, spec, factory):
     fixed = iter(args.seeds) if args.seeds is not None else None
     # Static batches assign new-success quotas; dynamic batches use the parent
     # coordinator's target and never stop based on a worker-local success count.
-    collected = 0 if args.additional else len(episode_files(args.out))
+    collected = 0 if args.additional else episode_count(args.out)
     stats = dict(success=0, fail=0, unstable=0, layout_error=0, error=0)
     if fixed is None and not args.scheduler and collected >= args.num:
         summary = {**stats, "success_rate": None, "collected": collected, "target_reached": True}
@@ -155,6 +174,7 @@ def collect(args, spec, factory):
         with connection as jobs:
             previous = None
             while True:
+                wait_for_conversion(args)
                 if jobs is not None:
                     seed = jobs.acquire(previous)
                     if seed is None:
@@ -190,6 +210,10 @@ def main(argv=None):
     args = parse(argv)
     try:
         spec = planner_spec(args.task, args.planner)
+        if args.format == "lerobot-v3":
+            from src.expert.training import collect_training
+
+            return collect_training("collect", args, sys.argv[1:] if argv is None else argv, spec)
         factory = load_planner(spec)
         summary = collect(args, spec, factory)
     except (ValueError, ImportError, AttributeError, TypeError) as exc:
