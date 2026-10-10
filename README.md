@@ -57,6 +57,8 @@ The [RoboDojo documentation](https://robodojo-benchmark.com/doc/) is the canonic
 
 Each contributor can configure their own clone with `bash scripts/install-uv.sh --with-export`, then `bash scripts/init_assets-uv.sh`. Collection uses the local `.venv`; export automatically uses `.venv-lerobot` (LeRobot 0.6.1 / v3.0 datasets). No external LeRobot checkout or policy environment is required. See [环境安装与路径配置](scripts/UV.md#数据生成与独立导出环境).
 
+Rendering automatically selects a low-noise profile for GPUs without DLSS Ray Reconstruction (such as A800), while preserving the existing RTX configuration on supported GPUs such as RTX 5090. See [渲染兼容与降噪](scripts/UV.md#渲染兼容与降噪) for profile overrides, live settings and validation.
+
 The earlier fixed-layout experiments remain available through `bash scripts/generate_data.sh legacy ...` or `scripts/datagen-uv.sh`. See [旧实验文档](docs/datagen/README.md) and [实测覆盖与限制](docs/datagen/VALIDATION.md); their task coverage is separate from the official-distribution planners.
 
 Current planner limits and per-task layout ranges: [capability matrix](docs/datagen/CAPABILITIES.md). See the [layout expansion guide](docs/datagen/LAYOUT_GUIDE.md) and [paused collection status](docs/datagen/PAUSED_STATE.md) before starting new batches.

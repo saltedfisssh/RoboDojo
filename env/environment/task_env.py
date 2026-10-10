@@ -88,6 +88,7 @@ class TaskEnv(BaseEnv):
             self.sim_step(render=False)
         self.camera_manager.reset()
         self.capture_manager.reset()
+        self.apply_render_profile(cameras_ready=self.capture_manager.is_ready)
 
     def step(self, meta_control_list: List[ControlSeq]):
         self.robot_manager.control_robot(meta_control_list=meta_control_list)

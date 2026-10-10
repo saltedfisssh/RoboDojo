@@ -189,6 +189,10 @@ class TiledCaptureManager:
             for cameras in self.camera_manager.cameras
         )
 
+    def is_ready(self):
+        """Whether all configured render products have produced camera data."""
+        return all(camera.is_ready() for camera in self.tiled_cameras)
+
     def reset(self):
         """Reuse render products on soft resets; rebuild after camera replacement."""
         if self._camera_signature != self._current_camera_signature():

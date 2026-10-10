@@ -10,6 +10,7 @@ from omegaconf import DictConfig, OmegaConf
 from omni.physx import acquire_physx_interface
 
 from env.environment.isaac.isaac_rl_env import IsaacRLEnv
+from env.environment.rendering import RenderProfile
 from env.seeding import seed_everywhere
 
 DEFAULT_SIM_DEVICE = "cpu"
@@ -171,8 +172,12 @@ class BaseEnv(gym.Env):
         Args:
             config (DictConfig): The configuration for the environment. This comes from hydra yaml.
         """
+        import carb.settings
+
         physx_config = _resolve_sim_section(DEFAULT_PHYSX_CONFIG, self.config.get("physx"))
         render_config = _resolve_sim_section(DEFAULT_RENDER_CONFIG, self.config.get("render"))
+        self.render_profile = RenderProfile.resolve(render_config, carb.settings.get_settings())
+        render_config = self.render_profile.configure(render_config)
         frequency_settings = _resolve_sim_section(
             DEFAULT_FREQUENCY_SETTINGS,
             self.config.get("frequency_settings"),
@@ -180,6 +185,26 @@ class BaseEnv(gym.Env):
 
         _apply_render_settings(self.sim_cfg.sim.render, render_config, frequency_settings)
         _apply_physx_settings(self.sim_cfg.sim.physx, physx_config)
+
+    def apply_render_profile(self, cameras_ready=None):
+        """Call after camera render products are created or rebuilt."""
+        import carb.settings
+
+        settings = carb.settings.get_settings()
+        if self.render_profile.name != "rtx":
+            # A created render product can still have no annotator output.
+            # Initialize it before changing renderer; no physics is stepped.
+            if cameras_ready is not None and not cameras_ready():
+                # A hard reset may recreate cameras while PathTracing is
+                # already active. Bootstrap their graphs in real-time too.
+                settings.set("/rtx/rendermode", "RaytracedLighting")
+            for _ in range(64):
+                self.render()
+                if cameras_ready is None or cameras_ready():
+                    break
+            else:
+                raise RuntimeError("Camera render products did not initialize before applying the low-noise profile")
+        self.render_metadata = self.render_profile.apply(settings, self.render)
 
     def sim_step(self, render: bool = True):
         """

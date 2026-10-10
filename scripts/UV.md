@@ -153,6 +153,76 @@ bash scripts/robodojo-uv.sh client --task stack_bowls --policy-name ACT \
 `robodojo-uv.sh` 入口使用，参数与原入口一致。低层入口为
 `eval_policy-uv.sh`、`internal/verify_install-uv.sh` 和 `internal/smoke_all_tasks-uv.sh`。
 
+## 渲染兼容与降噪
+
+公共 `BaseEnv` / `TaskEnv` 默认使用 `sim.render.profile: auto`，评测、数据生成和
+预览使用同一选择逻辑，支持以下 profile：
+
+| profile | 行为 |
+| --- | --- |
+| `auto`（默认） | 检查渲染 GPU。A800/A100/A30（8.0）、H100/H200/H800（9.0）等已知无 RR 设备选择低噪路径；RTX 3090/4090/5090 等保留原有配置。识别失败或架构未知时保留原配置并在日志注明。 |
+| `rtx` | 沿用原有 quality / DLAA 配置及用户自定义覆盖。 |
+| `low_noise` | 优先尝试已注册的 Minimal / Textured Diffuse；不可用或实际未生效则使用 PathTracing + OptiX。 |
+| `minimal` | 显式请求 Minimal；同样在不可用时回退到 PathTracing + OptiX。 |
+| `pathtracing` | 直接使用 PathTracing + OptiX，默认每像素 16 样本。 |
+
+可通过环境变量对任意现有入口指定 profile，环境变量优先于 YAML：
+
+```bash
+# A800 上显式选择已验证的兼容渲染。
+ROBODOJO_RENDER_PROFILE=pathtracing bash scripts/robodojo-uv.sh client \
+  --task deposit_coin --policy-name ACT --policy-host 127.0.0.1 --policy-port 9999 --eval-num 1
+
+# 支持 RR 的设备通常无需设置；也可以显式保持原有 RTX 路径。
+export ROBODOJO_RENDER_PROFILE=rtx
+```
+
+也可修改 `env_cfg/sim/sim_config.yml`（该文件本身就是 `sim` 配置）：
+
+```yaml
+render:
+  profile: auto
+  pathtracing_spp: 16
+```
+
+低噪 profile 会关闭反射、GI、translucency、DLSS-RR、DLSS 帧生成和 DLAA，保留
+直接光照与阴影。它会把 `antialiasing_mode` 设为 `null`，先等待所有相机 render product
+产出数据，再切换渲染模式；reset 后重新应用设置，模式切换后的延迟 AA 覆盖也会被校正。
+相机创建后立即启用 PathTracing 可能留下空 RGB 缓冲，因此初始化期间会先用实时模式
+建立相机数据通路；这些预热帧不写入数据集。空缓冲会报错，避免 Warp 读取越界。
+兼容路径同时清除 Replicator 的 `/rtx-transient/post/aa/limitedOps`，否则 Kit 5.1
+会把关闭的 AA 重新限制为 DLSS/DLAA。
+`/rtx/post/aa/op=0` 才是关闭 AA，`/rtx/post/dlss/execMode=0` 本身表示 Performance。
+低噪 profile 的关键设置优先于同名自定义覆盖；需要完全自定义渲染时用 `rtx`。
+
+每次 reset 的 `[RoboDojo render]` 日志包含请求的 profile、实际选择、GPU 和 live Carb
+值。关键设置在渲染更新后仍不匹配会报错，避免静默生成噪声图像。相同信息可以通过
+`env.render_metadata` 获取，并写入 expert HDF5 的 `meta.render` 和旧版采集的
+`metadata.render`；物理、动作和 checkpoint 数组格式不变。
+
+本机 Isaac Sim 5.1 没有注册 Minimal 模式，使用 PathTracing + OptiX。硬件识别依据
+[NVIDIA 支持表](https://docs.omniverse.nvidia.com/materials-and-rendering/latest/rtx-renderer_architecture_support.html)，
+不把所有 Ampere 卡视为无 RR；识别检查的是渲染设备，物理可继续在 CPU 上运行。
+硬件支持也需要兼容的 Kit 和驱动：例如 Linux Blackwell 的 RR 要求 Kit ≥106.5.3。
+若特殊驱动、GPU 映射或自定义启动器导致自动判断不适用，请显式选择 profile。
+
+PathTracing 可能降低动态场景的吞吐，关闭部分光照效果也会改变图像分布。应保留 profile 元数据，
+在同一仿真 tick 比较原生 RGB 的连续帧 MAD、3×3 median residual 和 residual >5
+像素比例，并检查三路视频尺寸、帧数和 fps。median 只用于计算诊断指标，输出图像
+没有额外滤波。RTX 机器上的最终画质仍需在对应机器上验收。
+
+2026-10-10，A800 / Isaac Sim 5.1 的 `deposit_coin` 静态场景对比：同一仿真 tick，
+三路相机各采集 12 张原生 RGB（640×480、uint8）。PathTracing + OptiX 16 spp
+使 MAD 从 5.87 / 2.56 / 2.73 降到 0，residual >5 像素比例降低 96.4%–97.3%，
+平均 median residual 降低 83.6%–85.8%（未达到指南中该指标降低 90% 的目标）。
+三路 MP4 的 640×480 / 12 帧 / 25 fps 均已完整解码验证，reset 后关键设置仍有效。
+默认 `auto` 的全新进程启动及执行动作后的三路相机刷新也已通过实机检查。
+静态 PathTracing 达到样本上限后会停止累积，因此 MAD=0 仅代表该静态测试。
+RTX 5090 的配置保留由回归测试覆盖，本机没有 5090，未做该型号的实机画质验证。
+额外测试在同一 stage 内直接销毁并重建 render products 时，Kit 5.1 在 annotator
+注册阶段报 `AnnotatorRegistryError`，该通路尚未通过实机验证；上面通过的是全新
+进程初始化、动作后采集及常规 reset 复用相机。
+
 ## 无 GPU 的 demo 调试闭环
 
 下面使用独立的轻量策略环境；无需模型权重，不启动 Isaac Sim，也不依赖 Assets：

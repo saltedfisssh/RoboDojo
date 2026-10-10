@@ -277,6 +277,16 @@ class CameraView(XFormPrim):
         for annotator in self._annotators.values():
             annotator.attach(self._render_product_path)
 
+    def is_ready(self):
+        """Check raw annotator output without launching the image-copy kernel."""
+        for annotator in self._annotators.values():
+            data = annotator.get_data(device=self._capture_device)
+            if isinstance(data, dict):
+                data = data["data"]
+            if data.size == 0:
+                return False
+        return True
+
     def get_data(
         self,
         annotator_type: str,
@@ -325,6 +335,14 @@ class CameraView(XFormPrim):
         else:
             tiled_data: wp.array = data
             info = {}
+        if tiled_data.size == 0:
+            # An uninitialized annotator can return an empty CPU array even
+            # when CUDA was requested. Launching the reshape kernel on that
+            # buffer reads out of bounds and can hang Kit's crash handler.
+            raise RuntimeError(
+                f"Camera annotator {annotator_type!r} has no rendered data yet; "
+                "initialize the render product and render before reading it."
+            )
         # tiled image
         if tiled:
             shape = (*self.tiled_resolution, spec["channels"])

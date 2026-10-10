@@ -96,6 +96,7 @@ def main():
                 layout, robot_names=[r.robot_name for r in env.robot_manager.robot_list], task=args.task
             ),
             "env_config": env.datagen_env_config,
+            "render": env.render_metadata,
             "state_schema": states.schema,
             "scene_adaptations": env.datagen_scene_adaptations,
             "sampler": "asset_metadata_v1",

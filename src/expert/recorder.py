@@ -108,6 +108,7 @@ class Recorder:
                 "action_semantics": "absolute joints; left j1..6, left gripper open[0,1], right j1..6, right gripper",
                 "state_semantics": "measured joints + previously commanded gripper opening (official ObsManager)",
                 "collect_seconds": round(time.time() - self.t0, 1),
+                "render": getattr(env, "render_metadata", None),
             }
             f.attrs["meta"] = json.dumps(meta)
             f.attrs["layout"] = json.dumps(self.layout)

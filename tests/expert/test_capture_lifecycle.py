@@ -57,6 +57,9 @@ def capture(monkeypatch):
         def detach(self, paths):
             self.detached.extend(paths)
 
+        def get_data(self, **kwargs):
+            return SimpleNamespace(size=1)
+
     products, annotators = [], []
     for name in ("isaacsim", "isaacsim.core", "isaacsim.sensors", "omni", "omni.replicator"):
         module(name)
@@ -142,3 +145,23 @@ def test_deleted_isaac_graph_node_does_not_prevent_render_product_release(captur
     capture.annotators[0].detach = stale_graph
     capture.manager.destroy()
     assert all(product.destroyed == 1 for product in capture.products)
+
+
+def test_empty_camera_buffer_is_rejected_before_warp_kernel_launch(capture):
+    capture.manager.reset()
+    view = capture.manager.tiled_cameras[0]
+    view._annotators["rgba"].get_data = lambda **kwargs: SimpleNamespace(size=0)
+    with pytest.raises(RuntimeError, match="has no rendered data yet"):
+        view.get_data("rgb")
+    capture.manager.destroy()
+
+
+def test_render_product_readiness_waits_for_every_camera(capture):
+    capture.manager.reset()
+    assert capture.manager.is_ready()
+    annotator = capture.manager.tiled_cameras[-1]._annotators["rgba"]
+    annotator.get_data = lambda **kwargs: {"data": SimpleNamespace(size=0)}
+    assert not capture.manager.is_ready()
+    annotator.get_data = lambda **kwargs: {"data": SimpleNamespace(size=640 * 480 * 4)}
+    assert capture.manager.is_ready()
+    capture.manager.destroy()
