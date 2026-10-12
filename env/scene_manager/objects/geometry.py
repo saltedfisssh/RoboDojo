@@ -12,7 +12,7 @@ import numpy as np
 from omegaconf import DictConfig
 import omni.kit.commands
 import omni.usd
-from pxr import Sdf, UsdGeom, UsdPhysics, UsdShade
+from pxr import Sdf, Usd, UsdGeom, UsdPhysics, UsdShade
 import torch
 
 
@@ -315,6 +315,10 @@ class GeometryObject(SingleGeometryPrim):
             print(f"Warning: Failed to hide prim {prim_path}: {e}")
 
     def destroy(self):
-        self._geometry_prim_view.disable_collision()
+        # Asset colliders may be descendants outside the root-only geometry view.
+        with Usd.EditContext(self.stage, self.stage.GetSessionLayer()):
+            for prim in Usd.PrimRange(self.stage.GetPrimAtPath(self._prim_path)):
+                if prim.HasAPI(UsdPhysics.CollisionAPI):
+                    UsdPhysics.CollisionAPI(prim).GetCollisionEnabledAttr().Set(False)
         self._geometry_prim_view.set_visibilities([False])
         self.hide_prim(self._prim_path)

@@ -157,39 +157,41 @@ class SceneManager:
         seed_everywhere(self._seeds_per_env[env_id])
 
     def reload_scene(self):
-        """Reload all environments from saved eval layouts."""
+        """Replace USD scene objects while the native physics owner is stopped."""
         print("[INFO] Resetting all environments")
-        self.post_init()
         env_ids = torch.arange(self.num_envs, device=self.device)
         self.reload_envs(env_ids)
-        self.setup_scene = False
 
-    def reload_envs(self, env_ids: Sequence[int]):
-        """Reload specified environments from saved eval layouts.
-
-        Args:
-            env_ids: Sequence of environment IDs to reset
-        """
-        if self._background and not self.setup_scene:
-            self.reload_background()
-
-        if not isinstance(env_ids, torch.Tensor):
-            env_ids = torch.tensor(env_ids, device=self.device, dtype=torch.int32)
-
-        for env_id in env_ids:
-            env_id = int(env_id)
-            self._set_env_seed(env_id)
-            self.reload_env_scene(env_id)
-
+    def post_reload_scene(self):
+        """Bind retained and new wrappers only after native hard reset/PLAY."""
+        native = self.sim.sim
+        view = native.physics_sim_view
+        if native.is_stopped() or view is None or not view.is_valid:
+            raise RuntimeError("Scene physics initialization requires a valid playing native owner")
+        self.post_init()
         for obj in self.pending_initialization:
             obj.initialize()
         self.pending_initialization.clear()
-
         self.sim.sim_step()
         for env_idx in range(self.num_envs):
             self.relocate_stale_objects(env_idx)
             if self._tables[env_idx] is not None:
                 self._tables[env_idx].relocate_offscreen()
+        self.setup_scene = False
+
+    def reload_envs(self, env_ids: Sequence[int]):
+        """Edit specified USD environments without reading or stepping physics."""
+        native = self.sim.sim
+        if not native.is_stopped() or native.physics_sim_view is not None:
+            raise RuntimeError("USD scene replacement requires the native owner to be stopped")
+        if self._background and not self.setup_scene:
+            self.reload_background()
+        if not isinstance(env_ids, torch.Tensor):
+            env_ids = torch.tensor(env_ids, device=self.device, dtype=torch.int32)
+        for env_id in env_ids:
+            env_id = int(env_id)
+            self._set_env_seed(env_id)
+            self.reload_env_scene(env_id)
 
     def apply_saved_poses(self, env_idx_list: List[int]):
         """Restore all scene objects to their saved eval-layout poses.
@@ -236,12 +238,10 @@ class SceneManager:
         self.reload_table(env_id)
 
         if self.device.type == "cuda":
-            self.relocate_stale_objects(env_id, ["rigid", "articulation"])
             # Clear existing objects (based on exclude_types)
             self.clear_scene_objects(env_id, exclude_types=["rigid", "articulation"])
             self.spawn_scene_objects(env_id, exclude_types=["rigid", "articulation"])
         else:
-            self.relocate_stale_objects(env_id, ["articulation"])
             # Clear existing objects (based on exclude_types)
             self.clear_scene_objects(env_id, exclude_types=["articulation"])
             self.spawn_scene_objects(env_id, exclude_types=["articulation"])
@@ -485,7 +485,8 @@ class SceneManager:
         env_root = self.env_roots[env_id]
         if types not in ["Table", "Room", "Light", "Ground"]:
             return
-        prim_path = f"{env_root}/{types}"
+        fixture_root = {"Room": "Rooms"}.get(types, types)
+        prim_path = f"{env_root}/{fixture_root}"
         if is_prim_path_valid(prim_path):
             delete_prim(prim_path)
 
@@ -667,6 +668,9 @@ class SceneManager:
         Args:
             obj: Object instance to delete
         """
+        native = self.sim.sim
+        if not native.is_stopped() or native.physics_sim_view is not None:
+            raise RuntimeError("Object retirement requires the native owner to be stopped")
         if self.device.type == "cuda":
             if isinstance(obj, GarmentObject):
                 if hasattr(obj, "usd_prim_path") and is_prim_path_valid(obj.usd_prim_path):
@@ -683,13 +687,37 @@ class SceneManager:
                 ):
                     delete_prim(obj.container_prim_path)
             elif isinstance(obj, ArticulationObject):
-                obj.relocate_offscreen()
+                self._retire_articulation_object(obj)
             else:
                 if hasattr(obj, "prim_path") and is_prim_path_valid(obj.prim_path):
                     delete_prim(obj.prim_path)
         else:
             if isinstance(obj, RigidObject) or isinstance(obj, GeometryObject):
+                stage, root_path = obj.stage, obj._prim_path
+                if stage != get_current_stage() or not stage.GetPrimAtPath(root_path).IsValid():
+                    raise RuntimeError(f"Cannot retire object from the current stage: {root_path}")
+                views = (obj._geometry_prim_view,)
+                if isinstance(obj, RigidObject):
+                    views += (obj._rigid_prim_view,)
                 obj.destroy()
+                for view in views:
+                    view.destroy()
+                    contact_view = getattr(view, "_contact_view", None)
+                    if contact_view is not None:
+                        contact_view._physics_view = None
+                        contact_view._physics_sim_view = None
+                        view._contact_view = None
+                if isinstance(obj, RigidObject):
+                    obj._rigid_prim_view._invalidate_physics_handle_callback(None)
+                    obj._rigid_prim_view._invalidation_callback = None
+                if any(view.is_valid() for view in views):
+                    raise RuntimeError(f"SDK views remain valid after retirement: {root_path}")
+                delete_prim(root_path)
+                residual_layers = [
+                    layer.identifier for layer in stage.GetLayerStack() if layer.GetPrimAtPath(root_path) is not None
+                ]
+                if stage.GetPrimAtPath(root_path).IsValid() or residual_layers:
+                    raise RuntimeError(f"Object retirement left prim/specs: {root_path}; layers={residual_layers}")
             elif isinstance(obj, GarmentObject):
                 if hasattr(obj, "usd_prim_path") and is_prim_path_valid(obj.usd_prim_path):
                     delete_prim(obj.usd_prim_path)
@@ -704,10 +732,27 @@ class SceneManager:
                 ):
                     delete_prim(obj.container_prim_path)
             elif isinstance(obj, ArticulationObject):
-                obj.relocate_offscreen()
+                self._retire_articulation_object(obj)
             else:
                 if hasattr(obj, "prim_path") and is_prim_path_valid(obj.prim_path):
                     delete_prim(obj.prim_path)
+
+    def _retire_articulation_object(self, obj: ArticulationObject):
+        """Release a scene articulation during explicit stopped clear/close."""
+        stage, root_path = obj.stage, obj._prim_path
+        if stage != get_current_stage() or not stage.GetPrimAtPath(root_path).IsValid():
+            raise RuntimeError(f"Cannot retire articulation from the current stage: {root_path}")
+        view = obj._articulation_view
+        view.destroy()
+        view._invalidate_physics_handle_callback(None)
+        view._invalidation_callback = None
+        obj._articulation_controller._articulation_view = None
+        delete_prim(root_path)
+        residual_layers = [
+            layer.identifier for layer in stage.GetLayerStack() if layer.GetPrimAtPath(root_path) is not None
+        ]
+        if stage.GetPrimAtPath(root_path).IsValid() or residual_layers:
+            raise RuntimeError(f"Articulation retirement left prim/specs: {root_path}; layers={residual_layers}")
 
     def is_global_config_key(self, key: str) -> bool:
         """Check if the key is a global configuration key.
