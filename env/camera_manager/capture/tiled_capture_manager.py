@@ -200,6 +200,8 @@ class TiledCaptureManager:
 
     def _release_capture(self):
         for camera in self.tiled_cameras:
+            camera.detach_capture()
+        for camera in self.tiled_cameras:
             camera.destroy()
         self.tiled_cameras.clear()
         self.tiled_render_products.clear()

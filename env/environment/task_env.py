@@ -1,3 +1,5 @@
+import builtins
+from contextlib import contextmanager
 from typing import Any, List
 
 from env.camera_manager.camera_manager import CameraManager
@@ -80,13 +82,45 @@ class TaskEnv(BaseEnv):
         if hasattr(self, "camera_manager") and self.camera_manager is not None:
             self.camera_manager.update_env_seeds(self.env_seeds)
 
+    @contextmanager
+    def _stopped_physics(self):
+        """Keep one native owner while safely entering a stopped USD edit phase."""
+        if self.sim is None:
+            yield None
+            return
+        native = self.sim.sim
+        stop_guard = native._disable_app_control_on_stop_handle
+        native._disable_app_control_on_stop_handle = True
+        try:
+            native.stop()
+            if not native.is_stopped() or native.physics_sim_view is not None:
+                raise RuntimeError("Native STOP did not release the shared physics view")
+            yield native
+        finally:
+            native._disable_app_control_on_stop_handle = stop_guard
+
     def reset(self, seed: Any | None = None, options: dict[str, Any] | None = None):
-        super().reset(seed=seed, options=options)
-        self.scene_manager.reload_scene()
+        self.update_seed(seed)
+        if self.sim is None:
+            self.launch_sim(self.config)
+        self.capture_manager.destroy()
+        with self._stopped_physics() as native:
+            self.scene_manager.reload_scene()
+            native.reset(soft=False)
+            callback_error = builtins.ISAACLAB_CALLBACK_EXCEPTION
+            if callback_error is not None:
+                builtins.ISAACLAB_CALLBACK_EXCEPTION = None
+                raise callback_error
+            view = native.physics_sim_view
+            if view is None or not view.is_valid:
+                raise RuntimeError("Native hard reset did not create a valid shared physics view")
+            self.sim.reset(options=options)
+            self.scene_manager.post_reload_scene()
         self.robot_manager.reset()
         for _ in range(300):
             self.sim_step(render=False)
         self.camera_manager.reset()
+        self.capture_manager.initialize(self.sim)
         self.capture_manager.reset()
         self.apply_render_profile(cameras_ready=self.capture_manager.is_ready)
 
@@ -94,8 +128,9 @@ class TaskEnv(BaseEnv):
         self.robot_manager.control_robot(meta_control_list=meta_control_list)
 
     def close(self):
-        self.capture_manager.destroy()
-        self.camera_manager.destroy()
-        self.robot_manager.close()
-        self.scene_manager.close()
-        super().close()
+        with self._stopped_physics():
+            self.capture_manager.destroy()
+            self.camera_manager.destroy()
+            self.robot_manager.close()
+            self.scene_manager.close()
+            super().close()
