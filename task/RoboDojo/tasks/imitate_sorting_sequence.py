@@ -38,8 +38,10 @@ class ImitateSortingSequenceCommon:
         )
         for env_idx in range(self.num_envs):
             seed = self.get_env_seed(env_idx)
+            traj_root = self.eval_cfg.get("eval_traj_root") or os.environ.get("ROBODOJO_EVAL_TRAJ_ROOT")
+            traj_root = traj_root or os.path.join(ASSETS_PATH, "Traj")
             traj_path = os.path.join(
-                ASSETS_PATH, "Traj", f"{BENCHMARK}", "imitate_sorting_sequence", f"{self.eval_seed}", f"{seed}.pkl"
+                traj_root, f"{BENCHMARK}", "imitate_sorting_sequence", f"{self.eval_seed}", f"{seed}.pkl"
             )
             data = load_pkl(traj_path)
             arm_position, arm_velocity = ([], [])

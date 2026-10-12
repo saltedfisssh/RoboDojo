@@ -15,6 +15,11 @@ smoke_results/
 docker/smoke_logs/
 data/
 
+# Eval datasets are distributed as Release assets; images stay under data/.
+/Eval_Layout/*
+!/Eval_Layout/README.md
+!/Eval_Layout/eval-layout-1000-v1.sha256
+
 # Local scratch
 Dev/
 ignore/

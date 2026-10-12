@@ -63,6 +63,12 @@ The earlier fixed-layout experiments remain available through `bash scripts/gene
 
 Current planner limits and per-task layout ranges: [capability matrix](docs/datagen/CAPABILITIES.md). See the [layout expansion guide](docs/datagen/LAYOUT_GUIDE.md) and [paused collection status](docs/datagen/PAUSED_STATE.md) before starting new batches.
 
+## Additional Evaluation Layouts
+
+Set `1000` provides 50 official-format layouts for each of the 54 runnable tasks and 50 matching sorting demonstrations. Layouts passed native Isaac Sim initialization; sorting demonstrations passed native physical replay. Download and restore the versioned dataset using [恢复与模型评测](Eval_Layout/README.md). Generated JSON, PKL and images are excluded from Git; initialization images remain in a local archive under `data/archives/`.
+
+Generation tools, fast rendering, validation records and the differences from official sets are documented in [评测布局维护](docs/EVAL_LAYOUTS.md). Report scores on this collection separately from official sets `0`, `1` and `2`.
+
 ## 🗂️ Repository Structure
 
 ```text

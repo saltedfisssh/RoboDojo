@@ -30,7 +30,9 @@ class SeedManager:
         abandoned_layout_ids: Iterable[int] | None = None,
     ):
         self.eval_seed = self.config.get("seed", 0)
-        layout_dir = Path(ASSETS_PATH, "Eval_Layout", BENCHMARK, self.config_name, str(self.eval_seed))
+        layout_root = self.config.get("eval_layout_root") or os.environ.get("ROBODOJO_EVAL_LAYOUT_ROOT")
+        layout_root = Path(layout_root) if layout_root else Path(ASSETS_PATH, "Eval_Layout")
+        layout_dir = layout_root / BENCHMARK / self.config_name / str(self.eval_seed)
         pattern = re.compile(rf"{re.escape(self.task_name)}_\d+\.json")
         matching_files = sorted(
             [p for p in layout_dir.iterdir() if pattern.fullmatch(p.name)],

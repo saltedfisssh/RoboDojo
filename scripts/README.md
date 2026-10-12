@@ -13,6 +13,21 @@
 `expert.sh` is a compatibility alias for `generate_data.sh`. Earlier fixed-layout experiments remain under
 `generate_data.sh legacy ...` / `datagen-uv.sh`; their data formats and task coverage differ from expert collection.
 
+## Additional evaluation layouts
+
+Use the existing evaluation CLI with the restored dataset; see [download and restore](../Eval_Layout/README.md).
+The following tools maintain new collections. Run them with `.venv/bin/python` from the repository root.
+
+| Script | Purpose |
+| --- | --- |
+| [generate_eval_layouts.py](generate_eval_layouts.py) | Sample task configs, validate native initialization and save matching JSON/PNG pairs; supports local or explicit SSH execution |
+| [generate_sorting_eval_layouts.py](generate_sorting_eval_layouts.py) | Generate sorting demonstrations with native replay checks; also supports per-index parallel sampling for other tasks |
+| [audit_eval_layouts.py](audit_eval_layouts.py) | Verify hashes, images and trajectory contracts; write the manifest, official comparison and image gallery |
+| [verify_eval_layouts.py](verify_eval_layouts.py) | Run missing native reward-initialization checks on older generation records |
+| [compact_sorting_trajectories.py](compact_sorting_trajectories.py) | Internal maintenance tool: shorten demonstrations under an active coordinator lease and publish only after native replay succeeds |
+
+See [maintenance, seeds and validation limits](../docs/EVAL_LAYOUTS.md) before generating or replacing a collection.
+
 ## uv entry points
 
 The uv scripts default to the repository's `.venv`; set `ROBODOJO_VENV` or use
