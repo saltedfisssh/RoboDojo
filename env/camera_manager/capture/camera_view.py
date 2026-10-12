@@ -210,20 +210,19 @@ class CameraView(XFormPrim):
         # remove the base class's simulation callbacks before the view dies.
         XFormPrim.destroy(self)
 
-    def _clean_up_tiled_sensor(self):
-        """Clean up the sensor by detaching annotators and destroying render products, and removing related prims."""
+    def detach_capture(self):
+        """Detach owned annotators before any capture product is destroyed."""
         product = getattr(self, "_render_product", None)
         if product is not None:
             for annotator in self._annotators.values():
-                try:
-                    annotator.detach([product.path])
-                except TypeError as exc:
-                    # Sim 5.1 may retain a deleted upstream node in SyntheticData
-                    # after a scene reset. Still release the render product;
-                    # unrelated detach failures must remain visible.
-                    if "Invalid NodeObj object" not in str(exc):
-                        raise
+                annotator.detach([product.path])
             self._annotators.clear()
+
+    def _clean_up_tiled_sensor(self):
+        """Release the detached sensor's owned render product."""
+        self.detach_capture()
+        product = getattr(self, "_render_product", None)
+        if product is not None:
             product.destroy()
             self._render_product = None
 

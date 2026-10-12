@@ -9,7 +9,7 @@ from isaacsim.core.utils.string import find_unique_string_name
 import numpy as np
 from omegaconf import DictConfig
 import omni.usd
-from pxr import Gf, Sdf, Usd, UsdGeom
+from pxr import Gf, Sdf, Usd, UsdGeom, UsdPhysics
 import torch
 
 from env.scene_manager.layout_manager import LayoutManager
@@ -247,7 +247,11 @@ class RigidObject(SingleRigidPrim, SingleGeometryPrim):
 
     def destroy(self):
         self._rigid_prim_view.disable_gravities()
-        self._geometry_prim_view.disable_collision()
+        # Asset colliders may be descendants outside the root-only geometry view.
+        with Usd.EditContext(self.stage, self.stage.GetSessionLayer()):
+            for prim in Usd.PrimRange(self.stage.GetPrimAtPath(self._prim_path)):
+                if prim.HasAPI(UsdPhysics.CollisionAPI):
+                    UsdPhysics.CollisionAPI(prim).GetCollisionEnabledAttr().Set(False)
         self._rigid_prim_view.set_visibilities([False])
         self._geometry_prim_view.set_visibilities([False])
         self.hide_prim(self._prim_path)
